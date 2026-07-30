@@ -1,0 +1,41 @@
+# --- secrets (NEVER commit) ---
+.env
+*.env
+!.env.example
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- runtime artifacts ---
+logs/
+*.log
+data/trading.db
+data/trading.db-wal
+data/trading.db-shm
+data/live/
+data/alternative/*.json
+backtesting/reports/
+
+# --- trained models (stored outside git / external storage) ---
+models/trained/*.pkl
+models/trained/*.joblib
+models/trained/*.h5
+models/trained/*.pt
+models/trained/*.zip
+
+# --- notebooks checkpoints ---
+.ipynb_checkpoints/
+
+# --- os/editor ---
+.DS_Store
+.idea/
+.vscode/

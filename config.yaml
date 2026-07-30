@@ -1,0 +1,454 @@
+# =============================================================================
+# fin-trade — MASTER CONFIGURATION
+# =============================================================================
+# Every runtime behavior of the agent is controlled here. Nothing is hidden
+# in code. Percentages are expressed as decimals (0.02 == 2%) unless a key
+# name says otherwise. API keys are injected from the environment / .env file
+# via ${VARIABLE} placeholders — never paste real keys into this file.
+#
+# SAFETY DEFAULTS (do not loosen without understanding the consequences):
+#   trading.mode: paper            -> no real money at risk
+#   circuit_breakers.enabled: true -> protective speed breakers active
+#   all loss limits small          -> system survives bad models
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core trading behavior
+# -----------------------------------------------------------------------------
+trading:
+  mode: "paper"                     # paper | live | shadow
+  automation_mode: "semi_automated" # manual | semi_automated | full_auto | hybrid
+  initial_capital: 100000
+  base_currency: "USD"
+  trading_hours: "market_only"      # market_only | extended | 24h
+
+  # Minimum composite signal confidence required to open a new position.
+  # The circuit-breaker system raises these automatically when states degrade.
+  min_confidence_normal: 0.65
+  min_confidence_restricted: 0.75
+  min_confidence_defensive: 0.90
+
+  # Live-trading authorization gate. Live mode additionally requires the
+  # environment variable FIN_TRADE_LIVE_AUTHORIZATION set to the exact
+  # phrase "I-UNDERSTAND-LIVE-TRADING-RISK" (see .env.example).
+  require_live_authorization_env: true
+
+# -----------------------------------------------------------------------------
+# Stock universe
+# -----------------------------------------------------------------------------
+watchlist:
+  use_sp500: false                  # auto-fetch full S&P 500 from Wikipedia
+  use_nasdaq100: false
+  use_russell2000: false            # requires an iShares holdings download
+  custom_stocks:
+    - "AAPL"
+    - "MSFT"
+    - "GOOGL"
+    - "TSLA"
+    - "NVDA"
+    - "AMZN"
+    - "META"
+    - "NFLX"
+    - "SPY"                         # benchmark / market-regime reference
+    - "QQQ"
+
+# -----------------------------------------------------------------------------
+# Timeframes. `primary` drives signal generation; secondary timeframes provide
+# confirmation; long_term provides trend bias. Intraday lookbacks honor both
+# the research targets below and hard provider caps (e.g. Yahoo only serves
+# 1m data for 7 days) — the data agent clamps and logs when clamping.
+# -----------------------------------------------------------------------------
+timeframes:
+  primary: "1d"
+  secondary: ["1h", "4h"]           # 4h bars are resampled locally from 1h
+  long_term: "1w"
+  lookback_days:                    # research target history per timeframe
+    "1m": 7
+    "5m": 60
+    "15m": 180
+    "30m": 180
+    "1h": 730
+    "4h": 730
+    "1d": null                      # null -> data.historical_years
+    "1w": 7300                      # ~20 years
+    "1mo": null                     # null -> 'max'
+
+# -----------------------------------------------------------------------------
+# Risk management policy — these are the *policy* values the risk engine and
+# position sizer use. order_limits below are the hard gateway caps that
+# mirror them for order-level enforcement.
+# -----------------------------------------------------------------------------
+risk:
+  max_position_size_pct: 0.10       # max allocation to a single stock
+  max_portfolio_risk_pct: 0.02      # max capital-at-risk (stop distance) per trade
+  max_drawdown_pct: 0.15            # hard stop from peak equity
+  daily_loss_limit_pct: 0.02
+  weekly_loss_limit_pct: 0.05
+  monthly_loss_limit_pct: 0.08
+  max_open_positions: 10
+  max_sector_concentration: 0.25
+  min_cash_reserve: 0.10            # fraction of equity always kept in cash
+  default_stop_loss_pct: 0.02
+  default_take_profit_pct: 0.04
+  default_rr_ratio: 2.0             # minimum acceptable reward:risk
+  use_trailing_stop: true
+  trailing_stop_pct: 0.015
+  trailing_stop_atr_multiple: 2.0
+  earnings_blackout_days: 2         # no new entries this many days pre-earnings
+  min_avg_volume: 500000            # minimum avg daily share volume (liquidity)
+  min_stock_price: 5.0              # avoid penny stocks
+  time_stop_days: 10                # exit positions with no progress
+  max_loss_per_trade_pct: 0.02      # absolute hard cap per trade
+
+# -----------------------------------------------------------------------------
+# CIRCUIT BREAKERS & SPEED BREAKERS  (Part 9 of the spec)
+#
+# Loss/pain thresholds are NEGATIVE decimals measured against the relevant
+# anchor (day/week/month start equity, or peak equity for drawdown).
+# Each nested block *must* be strictly descending and is validated at load.
+# -----------------------------------------------------------------------------
+circuit_breakers:
+  enabled: true                     # NEVER disable for live trading
+
+  # ---- Layer 2: daily speed breakers -------------------------------------
+  daily_loss:
+    level1_pct: -0.01               # YELLOW: alert + heightened monitoring
+    level2_pct: -0.015              # ORANGE: block new entries, reduce 25%
+    level3_pct: -0.02               # RED: halt day, close worst 50%
+    level4_pct: -0.03               # EMERGENCY: flatten everything, lock 2 days
+
+  # ---- Layer 3: weekly breakers ------------------------------------------
+  weekly_loss:
+    level1_pct: -0.03               # size -25%, confidence threshold +0.10
+    level2_pct: -0.05               # size -50%, A+ signals only
+    level3_pct: -0.07               # halt for remainder of week
+
+  # ---- Layer 4: monthly breakers ------------------------------------------
+  monthly_loss:
+    level1_pct: -0.05
+    level2_pct: -0.08
+    level3_pct: -0.12               # halt for remainder of month
+
+  # ---- Layer 5: portfolio drawdown (from peak equity) ----------------------
+  drawdown:
+    level1_pct: -0.05               # size -20%
+    level2_pct: -0.08               # size -40%, confidence >= 0.75
+    level3_pct: -0.12               # size -50%, max 3 positions, conf >= 0.85
+    level4_pct: -0.15               # close all, EMERGENCY, cooling-off period
+
+  # ---- Layer 6a: VIX fear gauge ------------------------------------------
+  vix:
+    reduce_25: 20                   # VIX 20-25 -> position sizes x0.75
+    reduce_50: 25                   # VIX 25-30 -> x0.50, no new longs
+    reduce_75: 30                   # VIX 30-40 -> x0.25
+    exit_all: 40                    # VIX > 40  -> flatten, move to cash
+    intraday_spike_pct: 0.20        # +20% intraday VIX spike -> immediate review
+
+  # ---- Layer 6b: market crash detector (benchmark daily move) --------------
+  market_crash:
+    benchmark_symbol: "SPY"
+    yellow_pct: -0.02               # S&P down >2% on the day
+    orange_pct: -0.03               # down >3% -> reduce exposure 50%
+    red_pct: -0.05                  # down >5% -> exit all longs
+    sector_crash_pct: -0.05         # sector down >5% -> exit that sector
+    sector_block_days: 3
+
+  # ---- Layer 6c: flash crash detector -------------------------------------
+  flash_crash:
+    threshold_pct: -0.01            # >1% drop within `timeframe_minutes`
+    timeframe_minutes: 5
+    pause_minutes: 10               # pause all order flow
+    resume_recovery_pct: 0.50       # resume only after 50% price recovery
+
+  # ---- Layer 6d: liquidity breakers ----------------------------------------
+  liquidity:
+    max_spread_pct: 0.01            # bid-ask spread >1% -> illiquid handling
+    min_volume_ratio: 0.30          # volume <30% of normal -> block entries
+
+  # ---- Layer 7: technical failure safeguards --------------------------------
+  technical:
+    data_feed_timeout_seconds: 120  # stale feed -> halt new orders
+    data_feed_emergency_seconds: 300  # still dead -> exit positions at market
+    api_retry_attempts: 3
+    api_retry_delay_seconds: 10
+    api_failure_escalation_seconds: 300
+    model_min_confidence: 0.40      # all models below -> model-failure fallback
+    max_orders_per_minute: 10
+    duplicate_order_window_seconds: 30
+    max_order_attempts: 3
+    position_mismatch_check_seconds: 300
+
+# -----------------------------------------------------------------------------
+# Recovery system — graduated re-entry after a trading halt
+# -----------------------------------------------------------------------------
+recovery:
+  day1_3_size_pct: 0.25
+  day4_7_size_pct: 0.50
+  week2_size_pct: 0.75
+  week3_plus_size_pct: 1.00
+  cooling_off_days: 5               # mandatory pause after drawdown level 4
+  require_positive_performance: true# 100% sizing only if recovery P&L >= 0
+
+# -----------------------------------------------------------------------------
+# Order limit gateway — hard caps enforced on EVERY order before routing
+# -----------------------------------------------------------------------------
+order_limits:
+  per_order:
+    max_order_size_pct: 0.10        # of portfolio value
+    max_order_value: 10000          # absolute dollar cap per order
+    min_order_value: 100            # ignore dust orders
+    max_slippage_pct: 0.005         # reject fills worse than this estimate
+    price_sanity_pct: 0.05          # reject if >5% from last known price
+    max_volume_participation: 0.10  # order vs avg daily volume
+    order_confirmation_delay_seconds: 2
+    duplicate_order_window_seconds: 30
+    max_attempts: 3
+
+  per_stock:
+    max_position_size_pct: 0.10
+    max_position_value: 25000
+    max_shares: 10000
+    min_avg_volume: 500000
+    min_price: 5.0
+    max_price: 10000.0
+    max_orders_per_stock_per_day: 3
+    earnings_blackout_days: 2
+
+  per_day:
+    max_trades_per_day: 20
+    max_new_positions_per_day: 5
+    max_capital_deployed_pct: 0.25  # of portfolio per day
+    max_daily_loss_pct: 0.02        # mirrors risk.daily_loss_limit_pct
+    enforce_pdt_rule: true          # pattern-day-trader guardrail (<$25k)
+
+  per_portfolio:
+    max_open_positions: 10
+    max_sector_concentration: 0.25
+    max_correlation: 0.70           # pairwise correlation ceiling among holdings
+    min_cash_reserve: 0.10
+    max_leverage: 1.0               # 1.0 == no margin
+    max_short_exposure_pct: 0.20
+
+# -----------------------------------------------------------------------------
+# Position sizing
+# -----------------------------------------------------------------------------
+position_sizing:
+  method: "fixed_risk_pct"          # fixed_pct | fixed_risk_pct | kelly |
+                                    # atr_based | volatility_target
+  kelly_fraction: 0.5               # half-Kelly safety factor
+  kelly_lookback_trades: 100        # trades used to estimate win stats
+  atr_period: 14
+  atr_multiplier: 2.0               # stop distance = 2 x ATR
+  atr_risk_per_trade: 0.02          # 2% of portfolio risked via stop distance
+  volatility_target_annual: 0.15
+  confidence_scaled: true           # scale size by signal confidence
+
+# -----------------------------------------------------------------------------
+# Models
+# -----------------------------------------------------------------------------
+models:
+  use_lstm: true
+  use_transformer: true
+  use_xgboost: true
+  use_lightgbm: true
+  use_rl_agent: true
+  use_ensemble: true
+  ensemble_method: "weighted_vote"  # weighted_vote | stacking | majority
+  retrain_frequency: "weekly"       # daily | weekly | monthly
+  min_training_samples: 1000
+  validation_split: 0.15
+  test_split: 0.15
+  lookback_window: 60               # sequence length for LSTM/Transformer
+  prediction_horizon_days: 5        # forward window for label generation
+  mc_dropout_samples: 50            # Monte-Carlo dropout uncertainty runs
+  drift_p_value: 0.01               # feature-drift retraining trigger
+  model_dir: "models/trained"
+
+# -----------------------------------------------------------------------------
+# Composite signal weights (must sum to 1.0)
+# -----------------------------------------------------------------------------
+signal_weights:
+  technical: 0.30
+  ml_models: 0.35
+  sentiment: 0.20
+  fundamental: 0.10
+  macro: 0.05
+
+# Composite-score thresholds in NORMAL mode (restricted/defensive thresholds
+# are derived by the circuit-breaker policy and enforced centrally)
+signal_thresholds:
+  strong_buy: 0.60
+  weak_buy: 0.30
+  weak_sell: -0.30
+  strong_sell: -0.60
+
+# -----------------------------------------------------------------------------
+# Sentiment analysis
+# -----------------------------------------------------------------------------
+sentiment:
+  use_news: true
+  use_reddit: false
+  use_twitter: false
+  use_insider: true
+  news_decay_hours: 24
+  sentiment_weight: 0.20            # mirrors signal_weights.sentiment
+  shift_alert_zscore: 2.5           # sentiment-shift anomaly detector
+
+# -----------------------------------------------------------------------------
+# Backtesting
+# -----------------------------------------------------------------------------
+backtesting:
+  default_start: "2015-01-01"
+  default_end: "2024-01-01"
+  commission: 0.001                 # per-trade fractional commission
+  slippage: 0.001                   # per-fill fractional slippage
+  simulate_circuit_breakers: true
+  walk_forward_windows: 6
+  monte_carlo_simulations: 10000
+  report_dir: "backtesting/reports"
+
+# -----------------------------------------------------------------------------
+# Data pipeline
+# -----------------------------------------------------------------------------
+data:
+  update_frequency: "5min"
+  historical_years: 10
+  database_path: "data/trading.db"
+  cache_ttl_seconds: 300
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  live_dir: "data/live"
+  alternative_dir: "data/alternative"
+  clean_outliers: false             # default: flag only, never silently mutate
+  outlier_zscore: 8.0               # |z| on returns beyond this -> flag
+  request_timeout_seconds: 30
+  max_retries: 3
+  retry_backoff_seconds: 2.0
+  rate_limit_spacing_seconds: 0.5   # min delay between provider calls
+  universe_cache_hours: 24          # how long S&P500/NASDAQ100 lists are cached
+
+# -----------------------------------------------------------------------------
+# Paper trading
+# -----------------------------------------------------------------------------
+paper_trading:
+  enabled: true
+  starting_capital: 100000
+  mode: "full_auto"                 # shadow | manual | semi_auto | full_auto
+  margin_enabled: false
+  snapshot_interval_seconds: 60     # portfolio history snapshot cadence
+  min_days_before_live: 90
+  required_sharpe: 1.0
+  required_max_drawdown: 0.15
+  required_win_rate: 0.50
+  slippage_model:
+    large_cap_min_bps: 1            # 0.01%
+    large_cap_max_bps: 10           # 0.10%
+    small_cap_min_bps: 10           # 0.10%
+    small_cap_max_bps: 50           # 0.50%
+    large_cap_threshold_mcap: 10000000000   # $10B
+    high_vol_extra_multiplier: 1.5
+    extended_hours_multiplier: 2.0
+  fill_model: "realistic"           # optimistic | realistic | pessimistic
+
+# -----------------------------------------------------------------------------
+# Automation schedule (America/New_York)
+# -----------------------------------------------------------------------------
+automation:
+  timezone: "America/New_York"
+  pre_market_start: "06:00"
+  market_open: "09:30"
+  stop_new_entries: "15:45"
+  close_day_positions: "15:55"
+  market_close: "16:00"
+  post_market_end: "18:00"
+  monitor_interval_seconds: 60      # risk / stop monitoring cadence
+  signal_scan_interval_seconds: 300
+  sentiment_update_interval_seconds: 3600
+  watchdog_interval_seconds: 30
+  task_max_retries: 3
+  task_retry_delay_seconds: 60
+
+# -----------------------------------------------------------------------------
+# Broker
+# -----------------------------------------------------------------------------
+broker:
+  name: "paper_only"                # alpaca | ibkr | paper_only
+  paper_trading: true               # use the broker's paper environment
+  alpaca_base_url: "https://paper-api.alpaca.markets"
+  request_timeout_seconds: 15
+  max_retries: 3
+  retry_delay_seconds: 10
+  ibkr_host: "${IBKR_HOST}"
+  ibkr_port: 7497
+  ibkr_client_id: 1
+
+# -----------------------------------------------------------------------------
+# Notifications
+# -----------------------------------------------------------------------------
+notifications:
+  enable_email: false
+  enable_desktop: true
+  enable_sms: false
+  enable_telegram: false
+  alert_on_signal: true
+  alert_on_trade: true
+  alert_on_circuit_breaker: true
+  alert_on_daily_summary: true
+  alert_on_risk_breach: true
+  daily_summary_time: "16:30"
+  max_alerts_per_hour: 60           # anti-spam rate limit
+  smtp_host: "${SMTP_HOST}"
+  smtp_port: 587
+  smtp_user: "${SMTP_USER}"
+  smtp_password: "${SMTP_PASSWORD}"
+  email_from: "${ALERT_EMAIL_FROM}"
+  email_to: "${ALERT_EMAIL_TO}"
+  telegram_bot_token: "${TELEGRAM_BOT_TOKEN}"
+  telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+
+# -----------------------------------------------------------------------------
+# API keys — substituted from the environment at load time. A missing value
+# becomes an empty string and the corresponding data source is skipped with a
+# warning. YFinance needs no key.
+# -----------------------------------------------------------------------------
+api_keys:
+  yfinance: "free_no_key_needed"
+  alpha_vantage: "${ALPHA_VANTAGE_KEY}"
+  finnhub: "${FINNHUB_KEY}"
+  polygon: "${POLYGON_KEY}"
+  newsapi: "${NEWSAPI_KEY}"
+  fred: "${FRED_KEY}"
+  sec_edgar_user_agent: "${SEC_EDGAR_USER_AGENT}"
+  reddit_client_id: "${REDDIT_CLIENT_ID}"
+  reddit_secret: "${REDDIT_SECRET}"
+  reddit_user_agent: "${REDDIT_USER_AGENT}"
+  twitter_bearer: "${TWITTER_BEARER}"
+  alpaca_api_key: "${ALPACA_KEY}"
+  alpaca_secret_key: "${ALPACA_SECRET}"
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+logging:
+  level: "INFO"                     # DEBUG | INFO | WARNING | ERROR
+  log_to_file: true
+  log_dir: "logs/"
+  rotate_daily: true
+  rotation_time: "00:00"            # local midnight
+  keep_days: 30
+  compression: "zip"
+  structured_json: true             # category files written as JSON lines
+  log_trades: true
+  log_signals: true
+  log_circuit_breakers: true
+  log_model_predictions: true
+
+# -----------------------------------------------------------------------------
+# Project paths
+# -----------------------------------------------------------------------------
+paths:
+  data_dir: "data"
+  notebooks_dir: "notebooks"
+  reports_dir: "backtesting/reports"
+  model_dir: "models/trained"
+  log_dir: "logs"

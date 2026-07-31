@@ -515,11 +515,18 @@ def build_broker(
         )
 
     if name == "alpaca":
-        gate = evaluate_live_gate(cfg, evidence or LiveGateEvidence(), broker_name=name)
-        gate.raise_if_denied()
-        from trading.alpaca_adapter import AlpacaBrokerAdapter
+        from trading.alpaca_adapter import AlpacaBrokerAdapter, is_paper_base_url
+        alp = cfg.broker.alpaca
+        requires_gate = str(alp.mode).lower() == "live" or not is_paper_base_url(alp.base_url)
+        if requires_gate:
+            gate = evaluate_live_gate(cfg, evidence or LiveGateEvidence(), broker_name=name)
+            gate.raise_if_denied()
         return AlpacaBrokerAdapter(
-            config=cfg, client=alpaca_client, gateway=gateway,
+            config=cfg,
+            client=alpaca_client,
+            gateway=gateway,
+            base_url=alp.base_url,
+            live_gate_evidence=evidence,
         )
 
     raise TerminalBrokerError(

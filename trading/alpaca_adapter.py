@@ -19,26 +19,50 @@ only when no client is injected AND the live gate has already passed.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, List, Mapping, Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from risk.position_limits import OrderRequest, PortfolioSnapshot, RiskGateway
 from trading.broker_base import (
     AccountSnapshot,
     BrokerAdapter,
+    LiveGateEvidence,
     OrderResult,
     OrderStatus,
     PositionSnapshot,
     RetryableBrokerError,
     TerminalBrokerError,
+    evaluate_live_gate,
     with_retry,
 )
 from utils.config import AppConfig, load_config
 from utils.logger import get_logger
 
-__all__ = ["AlpacaBrokerAdapter", "MockAlpacaClient"]
+__all__ = ["AlpacaBrokerAdapter", "MockAlpacaClient", "MockAlpacaError", "is_paper_base_url"]
 
 _log = get_logger("trading")
+
+PAPER_ALPACA_HOST = "paper-api.alpaca.markets"
+
+
+def is_paper_base_url(base_url: str) -> bool:
+    """Return True only for the canonical Alpaca paper trading endpoint."""
+    parsed = urlparse(str(base_url or "").strip())
+    host = (parsed.netloc or parsed.path).split("/", 1)[0].lower()
+    return host == PAPER_ALPACA_HOST
+
+
+class MockAlpacaError(Exception):
+    """Exception carrying an Alpaca-like error payload for mocked tests."""
+
+    def __init__(self, payload: Mapping[str, Any]) -> None:
+        self.payload = dict(payload)
+        code = self.payload.get("code", "error")
+        message = self.payload.get("message", self.payload.get("error", "mock alpaca error"))
+        super().__init__(f"{code}: {message}")
+
 
 # Map Alpaca status strings onto our normalized enum.
 _STATUS_MAP = {
@@ -141,13 +165,41 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         config: Optional[AppConfig] = None,
         client: Any = None,
         gateway: Optional[RiskGateway] = None,
+        base_url: Optional[str] = None,
+        live_gate_evidence: Optional[LiveGateEvidence] = None,
     ) -> None:
         self.config = config or load_config()
         self.gateway = gateway or RiskGateway(config=self.config)
+        alp = self.config.broker.alpaca
+        self.base_url = str(base_url or alp.base_url or self.config.broker.alpaca_base_url)
+        self.alpaca_mode = str(alp.mode or "paper").lower()
+        if self._requires_live_gate():
+            gate = evaluate_live_gate(
+                self.config,
+                live_gate_evidence or LiveGateEvidence(),
+                broker_name="alpaca",
+            )
+            gate.raise_if_denied()
         self._client = client if client is not None else self._build_live_client()
 
+    def _requires_live_gate(self) -> bool:
+        """Fail-closed URL gate: live mode or non-paper URL requires all-pass live evidence."""
+        return self.alpaca_mode == "live" or not is_paper_base_url(self.base_url)
+
+    def _retry(self, func: Any, *, label: str) -> Any:
+        """Run one Alpaca call with the nested broker.alpaca retry policy."""
+        alp = self.config.broker.alpaca
+        return with_retry(
+            func,
+            config=self.config,
+            attempts=int(alp.max_retries),
+            base_delay=float(alp.retry_delay_seconds),
+            timeout=float(alp.request_timeout_seconds),
+            label=label,
+        )
+
     def _build_live_client(self) -> Any:
-        """Lazy alpaca-py construction — only after the live gate has passed."""
+        """Lazy alpaca-py construction — only after the URL/live gate has passed."""
         try:
             from alpaca.trading.client import TradingClient  # type: ignore
         except ImportError as exc:
@@ -156,13 +208,15 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 "(install via requirements-optional.txt)",
                 cause=exc,
             ) from exc
-        key = self.config.api_keys.alpaca_api_key
-        secret = self.config.api_keys.alpaca_secret_key
+        key = os.environ.get("APCA_API_KEY_ID") or self.config.api_keys.alpaca_api_key
+        secret = os.environ.get("APCA_API_SECRET_KEY") or self.config.api_keys.alpaca_secret_key
         if not key or not secret:
-            raise TerminalBrokerError("alpaca credentials missing (ALPACA_KEY / ALPACA_SECRET)")
-        paper = bool(self.config.broker.paper_trading)
-        _log.info("constructing live Alpaca TradingClient (paper={})", paper)
-        return TradingClient(key, secret, paper=paper, url_override=self.config.broker.alpaca_base_url)
+            raise TerminalBrokerError(
+                "alpaca credentials missing (APCA_API_KEY_ID / APCA_API_SECRET_KEY)"
+            )
+        paper = self.alpaca_mode == "paper" and is_paper_base_url(self.base_url)
+        _log.info("constructing Alpaca TradingClient (paper={}, base_url={})", paper, self.base_url)
+        return TradingClient(key, secret, paper=paper, url_override=self.base_url)
 
     # ------------------------------------------------------------------
     # Gateway-routed placement helper
@@ -205,7 +259,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.submit")
+        return self._retry(_once, label="alpaca.submit")
 
     def cancel(self, order_id: str) -> OrderResult:
         def _once() -> OrderResult:
@@ -220,7 +274,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.cancel")
+        return self._retry(_once, label="alpaca.cancel")
 
     def replace(
         self,
@@ -246,7 +300,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.replace")
+        return self._retry(_once, label="alpaca.replace")
 
     def positions(self) -> List[PositionSnapshot]:
         def _once() -> List[PositionSnapshot]:
@@ -270,36 +324,54 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.positions")
+        return self._retry(_once, label="alpaca.positions")
 
     def orders(self, *, status: str = "open") -> List[OrderResult]:
         def _once() -> List[OrderResult]:
             try:
-                if hasattr(self._client, "get_orders"):
-                    raw_list = self._client.get_orders(status=status)
-                else:
-                    raw_list = []
-                return [_order_result(r) for r in (raw_list or [])]
+                if not hasattr(self._client, "get_orders"):
+                    return []
+                collected: List[Any] = []
+                page_token: Optional[str] = None
+                while True:
+                    try:
+                        raw_page = self._client.get_orders(
+                            status=status, limit=100, page_token=page_token,
+                        )
+                    except TypeError:
+                        raw_page = self._client.get_orders(status=status)
+                    next_token: Optional[str] = None
+                    if isinstance(raw_page, Mapping) and "items" in raw_page:
+                        collected.extend(list(raw_page.get("items") or []))
+                        next_token = raw_page.get("next_page_token") or None
+                    else:
+                        collected.extend(list(raw_page or []))
+                    if not next_token:
+                        break
+                    page_token = str(next_token)
+                return [_order_result(r) for r in collected]
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.orders")
+        return self._retry(_once, label="alpaca.orders")
 
     def account(self) -> AccountSnapshot:
         def _once() -> AccountSnapshot:
             try:
                 raw = self._client.get_account()
+                account_id = _attr(raw, "id", "account_id", "account_number", default="")
                 return AccountSnapshot(
                     equity=float(_attr(raw, "equity", default=0.0) or 0.0),
                     cash=float(_attr(raw, "cash", default=0.0) or 0.0),
                     buying_power=float(_attr(raw, "buying_power", default=0.0) or 0.0),
                     currency=str(_attr(raw, "currency", default="USD") or "USD"),
                     status=str(_attr(raw, "status", default="ACTIVE") or "ACTIVE"),
+                    raw={"source": "alpaca", "account_id": str(account_id or "")},
                 )
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.account")
+        return self._retry(_once, label="alpaca.account")
 
     def cancel_all(self) -> List[OrderResult]:
         def _once() -> List[OrderResult]:
@@ -330,7 +402,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.cancel_all")
+        return self._retry(_once, label="alpaca.cancel_all")
 
     def flatten(self) -> List[OrderResult]:
         def _once() -> List[OrderResult]:
@@ -353,7 +425,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             except Exception as exc:
                 raise _classify(exc) from exc
 
-        return with_retry(_once, config=self.config, label="alpaca.flatten")
+        return self._retry(_once, label="alpaca.flatten")
 
 
 # =============================================================================
@@ -375,17 +447,33 @@ class MockAlpacaClient:
         cash: float = 100_000.0,
         fail_times: int = 0,
         fail_exc: Optional[BaseException] = None,
+        base_url: str = "https://paper-api.alpaca.markets",
+        mode: str = "paper",
+        page_size: Optional[int] = None,
+        account_id: str = "PAPER-ACCOUNT-000000",
     ) -> None:
         self.equity = float(equity)
         self.cash = float(cash)
+        self.base_url = str(base_url)
+        self.mode = str(mode).lower()
+        self.paper = self.mode == "paper" and is_paper_base_url(self.base_url)
+        self.page_size = page_size
+        self.account_id = account_id
         self._orders: dict[str, dict[str, Any]] = {}
         self._positions: dict[str, dict[str, Any]] = {}
         self._fail_remaining = int(fail_times)
         self._fail_exc = fail_exc or RetryableBrokerError("mock transient")
+        self._error_payloads: dict[str, list[Mapping[str, Any]]] = {}
         self.calls: list[tuple[str, tuple, dict]] = []
+
+    def queue_error(self, op: str, payload: Mapping[str, Any]) -> None:
+        """Queue one Alpaca-style error payload for operation ``op``."""
+        self._error_payloads.setdefault(op, []).append(dict(payload))
 
     def _maybe_fail(self, op: str) -> None:
         self.calls.append((op, (), {}))
+        if self._error_payloads.get(op):
+            raise MockAlpacaError(self._error_payloads[op].pop(0))
         if self._fail_remaining > 0:
             self._fail_remaining -= 1
             raise self._fail_exc
@@ -412,6 +500,8 @@ class MockAlpacaClient:
             "limit_price": kwargs.get("limit_price"),
             "stop_price": kwargs.get("stop_price"),
             "type": otype,
+            "endpoint": self.base_url,
+            "paper": self.paper,
         }
         self._orders[order_id] = order
         if status == "filled" and qty:
@@ -473,7 +563,13 @@ class MockAlpacaClient:
         self._maybe_fail("get_all_positions")
         return [dict(v) for v in self._positions.values()]
 
-    def get_orders(self, status: str = "open") -> list[dict[str, Any]]:
+    def get_orders(
+        self,
+        status: str = "open",
+        *,
+        limit: Optional[int] = None,
+        page_token: Optional[str] = None,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         self._maybe_fail("get_orders")
         open_statuses = {"new", "accepted", "pending_new", "partially_filled", "pending_cancel", "pending_replace"}
         closed_statuses = {"filled", "canceled", "cancelled", "rejected", "expired", "replaced"}
@@ -486,18 +582,29 @@ class MockAlpacaClient:
                 out.append(dict(order))
             elif status == "closed" and st in closed_statuses:
                 out.append(dict(order))
-        return out
+        if self.page_size is None:
+            return out
+        page_limit = int(limit or self.page_size or len(out) or 1)
+        page_limit = max(1, min(page_limit, int(self.page_size)))
+        start = int(page_token or 0)
+        stop = start + page_limit
+        next_token = str(stop) if stop < len(out) else None
+        return {"items": out[start:stop], "next_page_token": next_token, "endpoint": self.base_url}
 
     def get_account(self) -> dict[str, Any]:
         self._maybe_fail("get_account")
         pos_value = sum(float(p.get("market_value", 0.0)) for p in self._positions.values())
         equity = self.cash + pos_value
         return {
+            "id": self.account_id,
+            "account_number": self.account_id,
             "equity": equity,
             "cash": self.cash,
             "buying_power": self.cash,
             "currency": "USD",
             "status": "ACTIVE",
+            "endpoint": self.base_url,
+            "paper": self.paper,
         }
 
     def cancel_orders(self) -> list[dict[str, Any]]:

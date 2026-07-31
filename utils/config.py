@@ -445,13 +445,35 @@ class AutomationConfig:
 
 
 @dataclass
+class AlpacaBrokerConfig:
+    """Alpaca endpoint policy and network timing.
+
+    Phase 15 intentionally separates Alpaca's endpoint/mode from the generic
+    broker retry knobs.  The default endpoint is the Alpaca **paper** API;
+    changing either ``mode`` to ``live`` or ``base_url`` away from the paper
+    host is not enough to trade live — the adapter still performs the
+    fail-closed live-gate check during construction.
+    """
+
+    base_url: str = "https://paper-api.alpaca.markets"
+    mode: str = "paper"  # paper | live
+    request_timeout_seconds: int = 15
+    max_retries: int = 3
+    retry_delay_seconds: int = 10
+
+
+@dataclass
 class BrokerConfig:
     name: str = "paper_only"
     paper_trading: bool = True
+    # Legacy flat fields are kept for backwards-compatible tests/callers; new
+    # Alpaca code reads broker.alpaca.* and falls back to these only when a
+    # pre-Phase-15 config omits the nested section.
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     request_timeout_seconds: int = 15
     max_retries: int = 3
     retry_delay_seconds: int = 10
+    alpaca: AlpacaBrokerConfig = field(default_factory=AlpacaBrokerConfig)
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 7497
     ibkr_client_id: int = 1
@@ -886,6 +908,15 @@ class AppConfig:
         check(self.broker.request_timeout_seconds > 0, "broker.request_timeout_seconds > 0")
         check(self.broker.max_retries >= 0, "broker.max_retries >= 0")
         check(self.broker.retry_delay_seconds >= 0, "broker.retry_delay_seconds >= 0")
+        alp = self.broker.alpaca
+        check(bool(str(alp.base_url or "").strip()), "broker.alpaca.base_url must be non-empty")
+        check(str(alp.mode).lower() in {"paper", "live"},
+              "broker.alpaca.mode must be paper | live")
+        check(alp.request_timeout_seconds > 0,
+              "broker.alpaca.request_timeout_seconds must be > 0")
+        check(alp.max_retries >= 1, "broker.alpaca.max_retries must be >= 1")
+        check(alp.retry_delay_seconds >= 0,
+              "broker.alpaca.retry_delay_seconds must be >= 0")
         check(0 < self.broker.ibkr_port < 65536, "broker.ibkr_port must be a valid TCP port")
 
         # --- notifications ---
@@ -1032,7 +1063,36 @@ def _build_root(raw: dict[str, Any], warnings: list[str]) -> AppConfig:
         cfg.paper_trading.slippage_model = _section(SlippageModelConfig, pt_raw.get("slippage_model"),
                                                     warnings, "paper_trading.slippage_model")
     cfg.automation = _section(AutomationConfig, raw.get("automation"), warnings, "automation")
-    cfg.broker = _section(BrokerConfig, raw.get("broker"), warnings, "broker")
+
+    broker_raw = raw.get("broker") or {}
+    if isinstance(broker_raw, dict):
+        broker_shallow = {k: v for k, v in broker_raw.items() if k != "alpaca"}
+        cfg.broker = _section(BrokerConfig, broker_shallow, warnings, "broker")
+        alpaca_raw = broker_raw.get("alpaca")
+        if isinstance(alpaca_raw, dict):
+            cfg.broker.alpaca = _section(AlpacaBrokerConfig, alpaca_raw, warnings,
+                                         "broker.alpaca")
+        elif alpaca_raw is None:
+            cfg.broker.alpaca = AlpacaBrokerConfig(
+                base_url=cfg.broker.alpaca_base_url,
+                request_timeout_seconds=cfg.broker.request_timeout_seconds,
+                max_retries=max(1, cfg.broker.max_retries),
+                retry_delay_seconds=cfg.broker.retry_delay_seconds,
+                mode="paper" if cfg.broker.paper_trading else "live",
+            )
+        else:
+            warnings.append("Section 'broker.alpaca' must be a mapping; using broker flat defaults.")
+            cfg.broker.alpaca = AlpacaBrokerConfig(
+                base_url=cfg.broker.alpaca_base_url,
+                request_timeout_seconds=cfg.broker.request_timeout_seconds,
+                max_retries=max(1, cfg.broker.max_retries),
+                retry_delay_seconds=cfg.broker.retry_delay_seconds,
+                mode="paper" if cfg.broker.paper_trading else "live",
+            )
+    else:
+        warnings.append("broker section malformed; using defaults.")
+        cfg.broker = BrokerConfig()
+
     cfg.notifications = _section(NotificationsConfig, raw.get("notifications"), warnings,
                                  "notifications")
     cfg.api_keys = _section(ApiKeysConfig, raw.get("api_keys"), warnings, "api_keys")

@@ -488,3 +488,39 @@ equivalence to the pre-optimisation outputs.
   PR \"Phase 13: optimization + final audit\".  This closes the master build plan.
 
 
+
+## Phase 15 Alpaca paper sandbox implementation note (2026-07-31)
+
+Phase 15 hardens the Alpaca paper path without weakening the live gate.
+`config.yaml` now has a nested `broker.alpaca` section (`base_url`, `mode`,
+`request_timeout_seconds`, `max_retries`, `retry_delay_seconds`). The default
+base URL is the canonical paper endpoint `https://paper-api.alpaca.markets`, and
+`broker.alpaca.mode` is validated as `paper | live`.
+
+`trading/alpaca_adapter.py` accepts an explicit `base_url`. Construction is
+fail-closed: any `mode=live` configuration or any URL whose host is not exactly
+`paper-api.alpaca.markets` must pass `evaluate_live_gate()` with all criteria
+(90+ paper days, Sharpe, drawdown, win rate, breakers tested, human phrase), or
+construction raises `LiveGateDenied`. The paper endpoint is allowed for sandbox
+work without live-gate evidence, but orders still route through
+`RiskGateway.transmit` via `adapter.place_order()`.
+
+`automation/reconcile.py` adds `reconcile_alpaca_paper()`, an optional compare
+between DB `paper_trades` net positions and Alpaca paper adapter positions. When
+enabled, it delegates to the existing reconciliation engine, so mismatches are
+written to `automation_log` and latch the sticky `POSITION_MISMATCH` breaker halt
+until a human clears the discrepancy. When disabled, the adapter is not touched
+and a skipped audit row is written.
+
+`scripts/alpaca_sandbox_smoke.py` is the operator-run paper smoke. It reads
+credentials only from `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` loaded from the
+local environment or `.env`; it never accepts keys on the command line and never
+prints keys. `--dry-run` uses `MockAlpacaClient` (zero network) while exercising
+the same ordered flow: fetch account, list positions, market buy one share, wait
+for fill, place/cancel a non-marketable limit, adapter kill switch
+(cancel-all + flatten), then token-confirmed resume. The transcript masks account
+and order identifiers.
+
+`MockAlpacaClient` now includes paper-endpoint semantics, account id fields for
+redaction, paginated order payloads, and queued Alpaca-style error payloads so the
+unit suite covers endpoint behavior with zero network.

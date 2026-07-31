@@ -104,4 +104,58 @@ summary.
 - [x] `backtest/fill_engine.py`: `price_fill()` is the **ONE shared fill-pricing path** (slippage by side, fee bps, partial fills, market-range clamp); `execute_next_bar_fill` delegates to it; the paper broker imports the same function (identity proven by test) — no divergent duplicate.
 - [x] `trading/paper_broker.py` (real bodies): fills via shared `price_fill`; config-derived fees (`backtesting.commission` → bps) and slippage; FIFO position ledger; realized P&L **including entry fees** via `db.close_paper_trade` (+ new `db.split_paper_trade` for proportional partial-close costs); idempotent submission honoring the config 30s duplicate window (`order_limits.per_order.duplicate_order_window_seconds`) and 10 orders/min (`circuit_breakers.technical.max_orders_per_minute`) — tests prove **both caps fire**; OCO and bracket containers transmitted through the gateway; low-level `submit` reachable only from `RiskGateway.transmit` (grep proof in the Phase-8 evidence pack).
 - [x] `trading/core.py` re-exports the single broker implementation (Phase-7 import paths unchanged); `OrderRequest` extended with `limit_price/stop_price/trail_pct/oco_group/parent_id` (Phase-7 constructions still valid).
-- [x] 54 new behavioral tests (`tests/unit/test_phase8_order_types.py` 29, `tests/unit/test_phase8_paper_broker.py` 25); gate evidence (2× green both envs, reconciliation, verbatim bodies) in `docs/PHASE8_EVIDENCE.md`.
+- [x] 54 new behavioral tests (`tests/unit/test_phase8_order_types.py` 29, `tests/unit/test_phase8_paper_broker.py` 25); gate evidence (2× green both envs, reconciliation, verbatim bodies) in `docs/PHASE8_EVIDENCE.md`. 
+
+## Phase 9 status (2026-07-31 — fresh session evidence)
+
+- [x] `automation/scheduler.py` (360 lines / 24 docstrings): US market-hours scheduler,
+  `America/New_York` aware, with `SessionPhase` (PRE_MARKET / REGULAR / POST_MARKET /
+  CLOSED), session open/close detection, NYSE weekend + holiday calendar, and
+  DST-transition edge handling (spring-forward/fall-back Sundays). **ALL time via an
+  injected clock** (`now_fn`); zero wall-clock in the detection logic or the tests.
+  `local_wallclock_to_utc` is the DST-aware conversion (09:30 → 14:30 UTC in EST,
+  13:30 UTC in EDT). `execution_allowed` honors `trading.trading_hours`
+  (market_only/extended/24h); `entries_allowed` honors the `stop_new_entries` guard.
+  Job execution gated by phase + interval, persisted in DB (survives restart).
+- [x] `automation/approval_queue.py` (339 lines / 16 docstrings): semi_automated
+  approval queue. Signals enqueue PENDING with TTL/expiry; `expire_due` drops
+  stale entries. `bypass()` returns True for `full_auto` (and high-confidence
+  `hybrid`); every other mode queues. Queue persisted in DB (`system_state` KV +
+  `automation_log`) so it survives restart. Lifecycle gated by the authoritative
+  `_ALLOWED` transition table (`_transition` raises `ApprovalError` on illegal moves).
+- [x] `automation/recovery.py` (297 lines / 19 docstrings): post-halt graduated size
+  ramp **exactly** per `recovery.*` config — day1-3 25%, day4-7 50%, week2 75%,
+  week3+ 100%, `cooling_off_days` 5. `ramp_multiplier` is the pure ramp-calculation
+  function. Integrates with circuit-breaker state restore: `mark_halted` freezes the
+  ramp (elapsed-days clock stops), `resume` restarts it at day 0, `observe_breaker`
+  auto-latches a halt from the live `CircuitBreakerManager`. `size_order` caps order
+  quantity through the **REAL** `RiskGateway` (integration test proves a 100-share
+  intent fills 25 on day 1 — no parallel limit logic). State persisted in DB.
+- [x] `automation/digest.py` (222 lines / 8 docstrings): daily digest (positions,
+  realized P&L, daily return/drawdown, breaker events, limit breaches) aggregated
+  from the audit tables; plain-text renderer for operator notifications.
+- [x] `automation/reconcile.py` (161 lines / 7 docstrings): startup reconciliation —
+  DB `paper_trades` net positions vs broker-reported positions; divergences
+  (db_only / broker_only / quantity mismatch) logged to `automation_log` and
+  escalated to the breaker as a sticky `POSITION_MISMATCH` that halts new entries
+  per policy.
+- [x] `tests/unit/test_phase9_automation.py`: 44 behavioral tests (5 parametrized
+  NYSE holidays expand the holiday function). DST spring-forward + fall-back Sunday
+  edge tests, session-window classification, weekend/holiday closure, approval
+  TTL/bypass/transitions/persistence, full ramp timeline + freeze/restart +
+  cooling-off + REAL `RiskGateway` integration, digest aggregation, reconciliation
+  (matched/db_only/broker_only/qty_mismatch + breaker halt). All time via injected
+  clocks; zero wall-clock; no network.
+- [x] Reconciliation: TOTAL = CORE_GREEN(425) + ML_ONLY(12) = 437; `.venv` collect=437;
+  `.venv-ml` collect=437; `.venv` run=425 passed / 12 ML-only import errors;
+  `.venv-ml` run=437 passed; 2× green each (distinct durations = fresh).
+- **CORRECTION (reconciliation definition):** prior phases reported
+  `ML_ONLY=24`, but that was the *collected* `test_phase3_models.py` +
+  `test_phase4_models.py` count (15 + 9 = 24), not the *fail-in-core* count.
+  Of those 24, exactly 12 fail in `.venv` (6 phase-3 + 6 phase-4, all
+  `ModuleNotFoundError: sklearn/torch/optuna`) and 12 pass in core. The
+  strict, directly-verifiable split is `CORE_GREEN(425) + ML_ONLY(12) = 437`
+  (prior CORE_GREEN was correspondingly 381 at the Phase-8 state, not 369).
+  The TOTAL (437) is unchanged and proven by identical collect-only output
+  in both environments. No logic weakened; no breaker thresholds weakened;
+  all commits pushed; Phase 10 (broker integration) next.

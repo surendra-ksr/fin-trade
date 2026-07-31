@@ -106,9 +106,61 @@ def donchian(df: pd.DataFrame, period=20) -> pd.DataFrame:
     """Causal Donchian high, low and midpoint channels."""
     hi=df.high.rolling(period,min_periods=period).max(); lo=df.low.rolling(period,min_periods=period).min(); return pd.DataFrame({'donchian_upper':hi,'donchian_lower':lo,'donchian_mid':(hi+lo)/2})
 
-def volume_indicators(df: pd.DataFrame, period=20) -> pd.DataFrame:
-    """OBV, VWAP, accumulation/distribution, CMF and volume z-score."""
-    d=df.close.diff(); obv=(np.sign(d).fillna(0)*df.volume).cumsum(); vwap=(df.close*df.volume).cumsum()/df.volume.cumsum().replace(0,np.nan); mfm=(2*df.close-df.low-df.high)/(df.high-df.low).replace(0,np.nan); ad=(mfm*df.volume).cumsum(); cmf=(mfm*df.volume).rolling(period,min_periods=period).sum()/df.volume.rolling(period,min_periods=period).sum().replace(0,np.nan); z=(df.volume-df.volume.rolling(period,min_periods=period).mean())/df.volume.rolling(period,min_periods=period).std(); return pd.DataFrame({'obv':obv,'vwap':vwap,'ad_line':ad,'cmf':cmf,'volume_zscore':z})
+def obv(df: pd.DataFrame) -> pd.Series:
+    """Return On-Balance Volume, adding volume on up closes and subtracting it on down closes.
+
+    Args:
+        df: Frame containing close and volume columns.
+    Returns:
+        Cumulative signed volume indexed like ``df``.
+    """
+    return (np.sign(df.close.diff()).fillna(0.0) * df.volume).cumsum().rename('obv')
+
+
+def vwap(df: pd.DataFrame) -> pd.Series:
+    """Return cumulative volume-weighted average price.
+
+    Args: df: Frame containing close and volume columns.
+    Returns: VWAP; rows before the first positive volume are NaN.
+    """
+    return ((df.close * df.volume).cumsum() / df.volume.cumsum().replace(0, np.nan)).rename('vwap')
+
+
+def chaikin_ad(df: pd.DataFrame) -> pd.Series:
+    """Return the cumulative Chaikin accumulation/distribution line.
+
+    Args: df: Frame containing high, low, close and volume columns.
+    Returns: Cumulative money-flow volume.
+    """
+    multiplier=(2*df.close-df.low-df.high)/(df.high-df.low).replace(0,np.nan)
+    return (multiplier*df.volume).cumsum().rename('ad_line')
+
+
+def cmf(df: pd.DataFrame, period: int=20) -> pd.Series:
+    """Return the Chaikin Money Flow over a causal rolling window.
+
+    Args: df: Frame containing high, low, close and volume columns.
+    period: Number of observations in the rolling window.
+    Returns: CMF series with NaN warm-up.
+    """
+    multiplier=(2*df.close-df.low-df.high)/(df.high-df.low).replace(0,np.nan)
+    return ((multiplier*df.volume).rolling(period,min_periods=period).sum()/df.volume.rolling(period,min_periods=period).sum().replace(0,np.nan)).rename('cmf')
+
+
+def volume_zscore(df: pd.DataFrame, period: int=20) -> pd.Series:
+    """Return rolling volume z-score using sample standard deviation.
+
+    Args: df: Frame containing volume.
+    period: Number of observations in the rolling window.
+    Returns: Standardized volume series with NaN warm-up.
+    """
+    mean=df.volume.rolling(period,min_periods=period).mean(); std=df.volume.rolling(period,min_periods=period).std()
+    return ((df.volume-mean)/std).rename('volume_zscore')
+
+
+def volume_indicators(df: pd.DataFrame, period: int=20) -> pd.DataFrame:
+    """Return the complete volume family assembled from independently testable functions."""
+    return pd.concat([obv(df),vwap(df),chaikin_ad(df),cmf(df,period),volume_zscore(df,period)],axis=1)
 
 def ichimoku(df: pd.DataFrame) -> pd.DataFrame:
     """Ichimoku lines with spans explicitly displaced 26 rows forward."""

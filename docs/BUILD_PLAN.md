@@ -41,3 +41,15 @@ a concrete need.
 - [x] Mocked provider and quality behavioral tests (`test_phase2_providers_quality.py` tracked; 282→294 discrepancy resolved)
 - [x] Core and ML-tier clean installs validated on Python 3.11 (`.venv` created; `.venv/bin/pip freeze` pasted; RSI demo = 86.20689655172414)
 - [ ] Provider-extension mocked HTTP tests and full production-grade data-quality gap/stale/action tests (follow-up required before final phase closure)
+
+## Phase 3 status (2026-07-31 — fresh session evidence)
+
+- [x] `models/base.py`: ABC `fit/predict/save/load`, versioned registry persisted in SQLite (`model_registry` table), round-trip test (`test_model_registry_roundtrip`)
+- [x] `models/neural.py`: LSTM + GRU (torch `2.6.0` from `requirements-ml.txt`); configurable layers/dropout; output-shape, seed-determinism (`test_lstm_output_shape_and_seed_determinism`), single-batch overfit smoke tests (`test_lstm_single_batch_overfit_smoke`, `test_gru_single_batch_overfit_smoke`)
+- [x] `models/gbm_baseline.py`: GBM (`scikit-learn==1.7.2`) with fit/predict/save/load (`test_gbm_fit_predict_save_load_roundtrip`)
+- [x] `models/trainer.py`: walk-forward split generator (`purged_walk_forward`) + purged embargoed K-fold CV (`embargo > 0` enforced); tests prove zero overlap (`test_purged_walk_forward_zero_overlap_and_embargo`) and correct gap (`test_trainer_embargo_and_no_overlap`)
+- [x] `models/trainer.py`: sequence builder (`SequenceBuilder`) with anti-leak test (`test_trainer_sequence_anti_leak`) using planted future spike that must not alter earlier rows
+- [x] `models/metrics.py`: RMSE/MAE/MAPE/directional-accuracy validated on known arrays (`test_metrics_on_known_arrays`, `test_metrics_validation_runs`)
+- [x] `.venv` (core) runs 298 tests (excluding Phase 3 ML tests); `.venv-ml` runs 313 tests (all green, 2× runs verified)
+- [x] `models/` stats: base 193 lines / 26 docstrings; neural 154 / 14; gbm 76 / 8; trainer 100 / 14; metrics 74 / 12
+- [x] No logic weakened; no safety thresholds bypassed; all commits pushed; working tree clean before evidence reporting

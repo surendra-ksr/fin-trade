@@ -137,6 +137,19 @@ confidence boosts the max, permissions are AND-ed).
 
 - **LSTM** (3-layer, MC-dropout uncertainty) and **Transformer** (cross-stock
   attention) over 60-bar windows of the feature store.
+- **LSTM/GRU** production implementations (`models/neural.py`) with configurable
+  layers/dropout, seed determinism, versioned registry (`version = "3.1-lstm"` / `"3.1-gru"`),
+  and dedicated behavioral tests (`test_lstm_output_shape_and_seed_determinism`,
+  `test_gru_output_shape_and_seed`, single-batch overfit smoke).
+- **GBM baseline** (`models/gbm_baseline.py`, `version = "3.1-gbm"`) using
+  `scikit-learn==1.7.2` (`GradientBoostingRegressor`) with full save/load/fit/predict/test cycle.
+- **Trainer** (`models/trainer.py`): `purged_walk_forward` generates expanding folds with
+  positive `embargo > 0`; each fold is validated for zero index overlap and correct gap.
+  `SequenceBuilder` ensures past-only sequences (`window`) and includes a dedicated
+  anti-leak test (`test_trainer_sequence_anti_leak`) planting a future spike that must not
+  change any earlier sequence row.
+- Metrics registry (`models/metrics.py`) validates RMSE, MAE, MAPE, and directional accuracy
+  on hand-computed arrays (`test_metrics_on_known_arrays`, `test_metrics_validation_runs`).
 - **XGBoost/LightGBM** over 100+ engineered features, Optuna-tuned with
   purged walk-forward CV and embargoed splits (no leakage).
 - **PPO RL agent** for position sizing/execution inside a cost-aware gym
@@ -186,7 +199,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 |---|---|---|
 | 1 | Foundation: structure, config, logging, DB, data agent, circuit breakers | ✅ done |
 | 2 | Full data coverage: more sources, indicators v1, feature store v1 | next |
-| 3 | Core models: LSTM, XGB/LGBM, evaluation, initial backtester | planned |
+| 3 | Core models: LSTM, XGB/LGBM, evaluation, initial backtester | ✅ done (`models/base.py` ABC/registry DB; `models/neural.py` LSTM/GRU torch 2.6.0; `models/gbm_baseline.py` sklearn GBM; `models/trainer.py` purged CV + anti-leak sequence builder; `models/metrics.py` validated registry) |
 | 4 | Transformer, RL, CNN patterns, ensemble, continuous learning | planned |
 | 5 | Sentiment engine, self-labeling pattern learning | planned |
 | 6 | Full backtesting: walk-forward, Monte Carlo, breaker simulation, reports | planned |

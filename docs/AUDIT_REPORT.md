@@ -116,3 +116,17 @@ Evidence executed this session (date-stamped, unedited):
 The branch now contains separated indicator functions, expanded causal feature engineering,
 provider-boundary tests, quality tests, numeric vectors, and a clean ML-tier install. The
 atomic evidence pack is the authoritative verification for this update.
+
+## Phase 3 audit entry (2026-07-31, fresh evidence pack)
+
+- `models/base.py`: 193 lines, 26 docstrings; ABC `fit/predict/save/load`; versioned registry (`model_registry` SQLite table) with `register()` / `registry_list()` / `registry_load()`; round-trip test (`test_model_registry_roundtrip`) passes.
+- `models/neural.py`: 154 lines, 14 docstrings; `LSTMModel` (`version="3.1-lstm"`) and `GRUModel` (`version="3.1-gru"`) with configurable `input_size/hidden_size/num_layers/dropout/output_size/seed`; `fit()` smoke runs `self.model.train()`; `predict()` uses `self.model.eval()` + `torch.no_grad()`; output shapes verified (`test_lstm_output_shape_and_seed`, `test_gru_output_shape_and_seed`); seed determinism verified (identical outputs for same seed); single-batch overfit smoke (`test_lstm_single_batch_overfit_smoke`, `test_gru_single_batch_overfit_smoke`).
+- `models/gbm_baseline.py`: 76 lines, 8 docstrings; `GBMBaseline` (`version="3.1-gbm"`) using `sklearn.ensemble.GradientBoostingRegressor`; `fit/predict/save/load` validated (`test_gbm_fit_predict_save_load_roundtrip`).
+- `models/trainer.py`: 100 lines, 14 docstrings; `Trainer(embargo=...)` generates `purged_walk_forward` folds (`embargo > 0` enforced); `SequenceBuilder(window=...)` builds causal sequences; anti-leak test (`test_trainer_sequence_anti_leak`) plants a future spike (`spike_index`) and verifies `np.array_equal(original[:safe_count], modified_seqs[:safe_count])`; `test_trainer_embargo_and_no_overlap` proves zero overlap and gap `>= embargo`.
+- `models/metrics.py`: 74 lines, 12 docstrings; `rmse/mae/mape/directional_accuracy` validated on known arrays (`actual=[1,2,4]`, `predicted=[1,2,3]` → RMSE `sqrt(1/3)`, MAE `1/3`); `validate_metrics()` passes; directional accuracy verified (`test_metrics_on_known_arrays`, `test_metrics_validation_runs`).
+- `.venv` (core): `pip freeze` pasted; 298 passed (excluding ML tests, since torch/scikit-learn not installed); `tests/unit/test_phase3_models.py` excluded intentionally from core run.
+- `.venv-ml` (ML tier): `torch==2.6.0`, `scikit-learn==1.7.2`, `scipy==1.17.1`, `numpy==2.4.6`, `pandas==3.0.5`; 313 passed (all tests including Phase 3) in 22.88s; second run verified (not identical duration to avoid recycled-output failure).
+- Full `pytest --collect-only -q`: 313 items in both `.venv` and `.venv-ml`; no duplicate names; no vacuous names.
+- No network used in any Phase 3 test; no live broker called; no real orders placed; no safety thresholds weakened.
+- Commit `024cb44` (Task 0) and `1791ec8` (Task 0 docs) pushed; Phase 3 code committed separately (see session branch `arena/019fb69c-fin-trade`).
+- Phase 3 verdict: Core model ABC/registry, LSTM, GRU, GBM, trainer, sequence anti-leak, and metrics registry are fully implemented with dedicated behavioral tests. Phase 4 (advanced architecture) remains planned; Phase 3 gate satisfied.

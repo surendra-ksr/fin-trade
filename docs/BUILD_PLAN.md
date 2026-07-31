@@ -170,3 +170,42 @@ summary.
 - [x] Gateway remains the SOLE transmission path (`broker.submit(` only in `RiskGateway.transmit` — grep proof in pack).
 - [x] 44 new behavioral tests (`tests/unit/test_phase10_broker.py`); reconciliation TOTAL = CORE_GREEN(469) + ML_ONLY(12) = 481 = 437 + 44; 2× green both envs (distinct durations).
 - [x] No logic weakened; no safety thresholds bypassed; no network; no live broker; no real orders; all commits pushed; Phase 11 (dashboard) next.
+
+## Phase 11 status (2026-07-31 — fresh session evidence)
+
+- [x] `dashboard/data.py` (398 lines / 21 docstring-triples): **PURE python providers**
+  (zero Streamlit import — proven by `test_dashboard_data_module_has_no_streamlit_import`),
+  one typed function per page (`overview_view`, `positions_view`, `orders_view`,
+  `breaker_state_view`, `limits_view`, `models_view`, `backtests_view`, `logs_view`,
+  `table_row_counts`). Reads ONLY the local sqlite DB; no network call sites
+  (proven by `test_dashboard_pure_modules_have_no_network_call_sites`). Empty DB is a
+  first-class case (empty/zero returns, never raises).
+- [x] `dashboard/actions.py` (190 lines / 12 docstring-triples): the two **mutation
+  handlers**, pure python. (a) `engage_kill_switch` gated by the Phase-10 token flow
+  (`request_kill_token` → `breaker.confirm_override`); token-less / invalid / expired
+  attempts are **rejected with no action** (`test_kill_switch_rejected_*`). (b)
+  `approve_signal` / `reject_signal` route through the Phase-9 `ApprovalQueue`.
+- [x] `dashboard/_runtime.py` (62 lines): streamlit-free bootstrap + `boot_check` that
+  exercises every provider once.
+- [x] `dashboard/app.py` + `dashboard/pages/*.py`: thin Streamlit renderers (multi-page:
+  overview, positions, orders, breaker state, limits, models, backtests, logs). Read-mostly;
+  the ONLY mutations are the token-confirmed kill switch and Phase-9 approve/reject.
+  Auto-refresh config-driven (`dashboard.refresh_interval_seconds`).
+- [x] Breaker-state panel renders `STATE_SEVERITY` + active `TradingPolicy` reconstructed
+  **read-only** from `breaker_state` persistence (never calls `evaluate()`).
+- [x] New `dashboard` config section (`enabled`/`title`/`refresh_interval_seconds`/
+  `boot_timeout_seconds`/`max_log_rows`) with validation.
+- [x] **New OPT_ONLY category declared**: `test_phase11_dashboard_boot.py` collects in CORE
+  (counts toward TOTAL) but the body fails `ModuleNotFoundError: streamlit`; passes in the
+  optional env (`streamlit==1.42.0`). Per-env collect-only: CORE=516, OPT=516 (identical).
+- [x] Reconciliation: **TOTAL = CORE_GREEN(503) + ML_ONLY(12) + OPT_ONLY(1) = 516**
+  (= baseline 481 + 34 CORE + 1 OPT_ONLY). CORE 2× green (28.18s / 26.07s, distinct).
+  Boot smoke: headless `streamlit run` boots within 30s in the optional env (output pasted
+  in `docs/PHASE11_EVIDENCE.md`).
+- [x] No logic weakened; no breaker thresholds weakened; no network; no live broker; no real
+  orders; all commits pushed; Phase 12 (integration + stress) next.
+
+## Phase 12 (next) preview
+
+Phase 12 (integration + stress) next: end-to-end paper-trading day, flash-crash sim, feed
+outage, order storm vs the 10/min cap, coverage >=85% on risk/ and trading/.

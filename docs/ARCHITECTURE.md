@@ -215,7 +215,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 8 | All order types + paper engine (4 modes) + transition checklist | ✅ done (`trading/order_types.py` market/limit/stop/stop-limit/trailing/OCO/bracket with validated state machine + trigger edges; `trading/paper_broker.py` real fills via the shared `backtest.fill_engine.price_fill` core, fees, positions, realized P&L incl. entry fees via `db.close_paper_trade`, idempotency caps — 30s duplicate window + 10 orders/min) |
 | 9 | Automation framework, scheduler routines, watchdog, notifications | ✅ done (`automation/scheduler.py` US market-hours scheduler, America/New_York aware, session/phase detection + NYSE holiday/DST edge handling, all time via injected clock; `automation/approval_queue.py` semi_automated TTL queue persisted in DB, full_auto bypass; `automation/recovery.py` post-halt graduated ramp (25/50/75/100% + cooling-off) integrated with breaker state, capping size through the real RiskGateway; `automation/digest.py` daily digest; `automation/reconcile.py` startup reconciliation that halts on position mismatch) |
 | 10 | Broker adapters (Alpaca paper first), reconciler, live monitor | ✅ done (`trading/broker_base.py` ABC + retry/timeout + live gate; `trading/paper_adapter.py` default; `trading/alpaca_adapter.py` behind live gate + mocked client; kill-switch cancel-all/flatten/token-resume on both; 44 behavioral tests) |
-| 11 | Streamlit dashboard (12 pages) | planned |
+| 11 | Streamlit dashboard (12 pages) | ✅ done (`dashboard/data.py` PURE python providers (zero Streamlit import → tested in CORE), `dashboard/actions.py` mutation handlers (token-confirmed kill switch + Phase-9 approve/reject), `dashboard/app.py` + `dashboard/pages/*.py` thin Streamlit renderers; offline (local sqlite DB only); read-mostly; auto-refresh config-driven; breaker panel renders STATE_SEVERITY + active TradingPolicy; headless boot smoke (OPT_ONLY env); 34 CORE + 1 OPT_ONLY tests) |
 | 12 | Integration/stress suites, 90-day paper run, docs | planned |
 | 13 | Continuous optimization | ongoing |
 
@@ -229,7 +229,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 4 | **Speed breaker loss limits** — daily, weekly, monthly, per-strategy, per-asset, drawdown | **Yes (daily/weekly/monthly/drawdown ✅ implemented & tested; per-strategy/per-asset hooks shipped as metadata hooks: strategy-level limits are enforced via `limit_*` config + `limit_breach_log`, allocated to Phase 8 gateway with per-strategy buckets already in the paper_trades schema)** | `risk/circuit_breakers.py` Layers 2–5 ✅, `circuit_breakers.*` config ladders ✅, `paper_trades.strategy` column ✅ |
 | 5 | **Kill switch / emergency halt** — manual + automatic, cancels orders, optional flatten, human-gated resume | **Yes ✅ implemented & tested** | `activate_kill_switch`, `suspend`, double-confirm `request_override`/`confirm_override`, locked resume, entered states block all entries (policy tests) |
 | 6 | **Broker integration with safety checks** — pluggable adapters, retry/timeout, all orders through the risk gateway | **Yes ✅ implemented & tested (Phase 10)** | `trading/broker_base.py` ABC (`submit`/`cancel`/`replace`/`positions`/`orders`/`account` + kill-switch); `with_retry` exponential backoff+jitter+timeout (config-driven, injected sleeper); paper + gated Alpaca adapters; `evaluate_live_gate` fail-closed (≥90d/Sharpe≥1/maxDD≤15%/WR≥50%/breakers/human auth); gateway sole `broker.submit` path |
-| 7 | **Human oversight & configurability** — everything configurable without code, documented, logged, visible | **Yes ✅** | full `config.yaml` (200+ knobs, validated), per-category JSON logs + audit tables (`circuit_breaker_log`, `automation_log`, `limit_breach_log`), `.env.example` docs, dashboard pages planned Phase 11 |
+| 7 | **Human oversight & configurability** — everything configurable without code, documented, logged, visible | **Yes ✅ (dashboard landed Phase 11)** | full `config.yaml` (200+ knobs, validated, incl. `dashboard.*` refresh/boot config), per-category JSON logs + audit tables (`circuit_breaker_log`, `automation_log`, `limit_breach_log`), `.env.example` docs; **Phase-11 dashboard** makes state visible (overview, positions, orders, breaker state, limits, models, backtests, logs) and wires the two human-in-the-loop mutation paths — token-confirmed kill switch (Phase-10 flow) and Phase-9 approve/reject on the approval queue (self-check item 7) |
 
 All seven answers are **Yes**: the Phase‑1 codebase implements items 4–6 core
 mechanics end-to-end; items 1–3 are fully specified in config/schema/design
@@ -345,4 +345,39 @@ Adapters: `trading/paper_adapter.py` (default, wraps Phase-8 `PaperBroker`) and
 `MockAlpacaClient` for zero-network tests). The same contract suite runs against both.
 `RiskGateway.transmit` remains the sole caller of low-level `submit` (grep proof in the
 Phase-10 evidence pack).
+
+## Phase 11 dashboard implementation note (2026-07-31)
+
+The dashboard is an **offline, read-mostly** Streamlit control surface. To keep the
+reconciliation honest (and prevent the optional-tier Streamlit dependency from corrupting
+the CORE test count), the data layer is split exactly along the architecture rule:
+
+* `dashboard/data.py` — **PURE python providers** (zero Streamlit import, proven by
+  `test_dashboard_data_module_has_no_streamlit_import`). One typed function per page
+  (`overview_view`, `positions_view`, `orders_view`, `breaker_state_view`,
+  `limits_view`, `models_view`, `backtests_view`, `logs_view`), each reading ONLY the
+  local sqlite DB (no network; proven by `test_dashboard_pure_modules_have_no_network_call_sites`).
+  A fresh/empty DB is a first-class case (empty/zero returns, never raises).
+* `dashboard/actions.py` — **PURE python mutation handlers** (zero Streamlit import):
+  the two and only mutation paths. (a) `engage_kill_switch` is gated by the Phase-10
+  double-confirmation token flow (`request_kill_token` → `confirm_override`); a
+  token-less / invalid / expired attempt is **rejected with no action** (proven by
+  `test_kill_switch_rejected_*`). (b) `approve_signal` / `reject_signal` route through
+  the Phase-9 `ApprovalQueue` lifecycle (persisted to `system_state` + `automation_log`).
+* `dashboard/_runtime.py` — streamlit-free bootstrap (config + local DB open + `boot_check`
+  that exercises every provider once).
+* `dashboard/app.py` + `dashboard/pages/*.py` — **thin Streamlit renderers** that only
+  call the pure functions; not collected by pytest (`testpaths=tests`).
+
+The breaker-state panel renders `STATE_SEVERITY` + the active `TradingPolicy` reconstructed
+**read-only** from the persisted `breaker_state` row (it derives the policy from the latched
+state + triggers and never calls `evaluate()`, which persists/logs). Auto-refresh is
+config-driven (`dashboard.refresh_interval_seconds` via `st.fragment(run_every=...)`).
+
+Because Streamlit lives only in the optional tier, the headless boot smoke
+(`test_dashboard_headless_boot_smoke`) declares a new **OPT_ONLY** category: the module
+collects in CORE (counted toward TOTAL) but the body fails with `ModuleNotFoundError:
+streamlit`, and passes in the optional env (launches `streamlit run dashboard/app.py`
+headless, confirms boot within the 30s deadline). Reconciliation:
+`TOTAL = CORE_GREEN + ML_ONLY(12) + OPT_ONLY`.
 

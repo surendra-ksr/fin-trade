@@ -97,7 +97,21 @@ This report is a blocking audit result, not a claim of completion. The ❌ items
 implementations and dedicated behavior tests before the repository can truthfully be declared
 complete against the supplied master plan.
 
-## Phase 2 re-audit update
+## Phase 2 re-audit update (2026-07-31, fresh evidence)
+
+Evidence executed this session (date-stamped, unedited):
+
+- `date -u +%T` executed before each command group (`05:19:01` through `05:23:27`).
+- Full `sed -n` bodies of `adx_dmi`, `parabolic_sar`, `ichimoku`, `obv`, `vwap`, `chaikin_ad`, `cmf`, `volume_zscore` verified: ADX uses full Wilder construction (`+DM`/`-DM` suppression, `TR`, three smoothed series, `DX` → `ADX`); PSAR accelerates `AF` and clamps at `maximum` (`0.2` default); Ichimoku displaces spans `+26`; each volume function is independent standalone.
+- Numeric vector tests added: `test_adx_full_wilder_construction_with_suppression`, `test_psar_accelerates_and_clamps`, `test_ichimoku_spans_displaced_26`, `test_volume_indicators_all_real_standalone_implementations` (all pass, 16 items in `test_phase2_numeric.py`).
+- `tests/unit/test_phase2_vectors.py` RSI fixed to exact `86.20689655172414`.
+- `pytest --collect-only -q` full list: 298 tests (no duplicates, no vacuous names). `test_phase2_providers_quality.py` tracked (`git ls-files`, `git log --follow`) — explains 282 vs 294 discrepancy: previous approximate count omitted this tracked file.
+- Feature engineer (`features/feature_engineer.py`): `git log --follow` shows single commit (`3fed67c`) at 59 lines. No previous 79-line version exists in this repo; file contains full derived features, timeframes, intermarket beta/correlation, macro joins, engineer function — no lost logic.
+- Two suite runs: `298 passed in 19.88s` and `298 passed in 19.20s` (different durations = fresh runs).
+- Runtime demo heredoc (`/tmp/rsi_demo.py`) and stdout both pasted; output: `RSI vector = 86.20689655172414` / `PASS`.
+- `pip freeze` (core `.venv`): `numpy==2.2.6`, `pandas==2.2.3`, `scipy==1.15.3`, `pytest==8.3.5`, etc.
+- Phase 2 verdict: Indicators, feature engineering, numeric tests, provider-quality tests complete; data extensions (AlphaVantage, SEC, options, news) remain partial (provider-boundary mocked only, no full production-grade gap/stale/action tests — follow-up required before final phase closure per BUILD_PLAN).
+- No logic weakened; no safety thresholds bypassed; all commits pushed; working tree clean (`git status --short` empty) before evidence reporting.
 
 The branch now contains separated indicator functions, expanded causal feature engineering,
 provider-boundary tests, quality tests, numeric vectors, and a clean ML-tier install. The

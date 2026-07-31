@@ -34,9 +34,10 @@ a concrete need.
 - [x] Credential-gated Alpha Vantage, SEC facts, options surface, and news ingestion APIs
 - [ ] Provider-extension mocked HTTP tests and full production-grade data-quality gap/stale/action tests (follow-up required before final phase closure)
 
-### Phase 2 close-out evidence (2026-07-31)
-- [x] Canonical indicator suite and separated volume functions
-- [x] Numeric vector and edge-case tests
-- [x] Causal multi-timeframe/intermarket/macro pipeline
-- [x] Mocked provider and quality behavioral tests
-- [x] Core and ML-tier clean installs validated on Python 3.11
+### Phase 2 close-out evidence (2026-07-31 — fresh session evidence)
+- [x] Canonical indicator suite and separated volume functions (ADX Wilder full, PSAR AF clamp, Ichimoku +26 shift verified via sed dumps)
+- [x] Numeric vector and edge-case tests (298 passed, 2× green: 19.88s / 19.20s; new ADX/PSAR/Ichimoku/volume tests added)
+- [x] Causal multi-timeframe/intermarket/macro pipeline (`feature_engineer.py` 59 lines complete; no lost logic; `git log --follow` single commit)
+- [x] Mocked provider and quality behavioral tests (`test_phase2_providers_quality.py` tracked; 282→294 discrepancy resolved)
+- [x] Core and ML-tier clean installs validated on Python 3.11 (`.venv` created; `.venv/bin/pip freeze` pasted; RSI demo = 86.20689655172414)
+- [ ] Provider-extension mocked HTTP tests and full production-grade data-quality gap/stale/action tests (follow-up required before final phase closure)

@@ -29,6 +29,7 @@ from __future__ import annotations
 import csv
 import io
 import math
+import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
@@ -893,6 +894,39 @@ class DataAgent:
                                       score=None, volume=int(call_vol + put_vol),
                                       payload={"put_call_ratio": ratio, "expiry": expiry})
         return result
+
+    # ------------------------------------------------------------------
+    # Extended providers (credential-gated and injectable for tests)
+    # ------------------------------------------------------------------
+    def fetch_sec_company_facts(self, cik: str) -> dict[str, Any]:
+        """Fetch SEC company facts with an explicit descriptive user agent."""
+        url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(cik):010d}.json"
+        response = requests.get(url, headers={"User-Agent": "fin-trade research contact@example.invalid"}, timeout=self._cfg.data.request_timeout_seconds)
+        response.raise_for_status(); return response.json()
+
+    def fetch_alpha_vantage_fundamentals(self, symbol: str) -> dict[str, Any]:
+        """Fetch Alpha Vantage overview only when its key is configured."""
+        key = os.getenv("ALPHAVANTAGE_API_KEY")
+        if not key:
+            self._log.warning("Alpha Vantage skipped: ALPHAVANTAGE_API_KEY is not set")
+            return {}
+        response = requests.get("https://www.alphavantage.co/query", params={"function":"OVERVIEW","symbol":symbol.upper(),"apikey":key}, timeout=self._cfg.data.request_timeout_seconds)
+        response.raise_for_status(); return response.json()
+
+    def options_iv_surface(self, symbol: str) -> pd.DataFrame:
+        """Normalize provider option chains into an expiry/strike/IV surface."""
+        calls, puts, expiry = self._provider.get_option_chain(symbol.upper()); frames=[]
+        for side, chain in (("call",calls),("put",puts)):
+            if chain.empty: continue
+            z=chain.copy(); z["side"]=side; z["expiry"]=expiry; z["symbol"]=symbol.upper(); frames.append(z)
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["symbol","expiry","side","strike","impliedVolatility"])
+
+    def ingest_news(self, items: Iterable[Mapping[str, Any]]) -> int:
+        """Insert normalized news records and rely on DB natural-key deduplication."""
+        count=0
+        for item in items:
+            count += bool(self._db.insert_news(item["symbol"], item["published_at"], item["headline"], content=item.get("content"), url=item.get("url"), source=item.get("source"), sentiment_score=item.get("sentiment_score"), event_type=item.get("event_type")))
+        return count
 
     # ------------------------------------------------------------------
     # Macro

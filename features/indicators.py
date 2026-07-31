@@ -13,7 +13,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out['macd']=c.ewm(span=12,adjust=False).mean()-c.ewm(span=26,adjust=False).mean(); out['macd_signal']=out.macd.ewm(span=9,adjust=False).mean()
     atr=tr.rolling(14,min_periods=1).mean(); out['atr_14']=atr
     up=h.diff(); dn=-l.diff(); plus=up.where((up>dn)&(up>0),0); minus=dn.where((dn>up)&(dn>0),0); out['plus_di']=100*plus.rolling(14,min_periods=1).mean()/atr; out['minus_di']=100*minus.rolling(14,min_periods=1).mean()/atr; out['adx']=((out.plus_di-out.minus_di).abs()/(out.plus_di+out.minus_di).replace(0,np.nan)*100).rolling(14,min_periods=1).mean()
-    gain=d.clip(lower=0).rolling(14,min_periods=1).mean(); loss=(-d.clip(upper=0)).rolling(14,min_periods=1).mean(); out['rsi']=100-100/(1+gain/loss.replace(0,np.nan))
+    gain=d.clip(lower=0).rolling(14,min_periods=1).mean(); loss=(-d.clip(upper=0)).rolling(14,min_periods=1).mean(); out['rsi']=(100-100/(1+gain/loss.replace(0,np.nan))).where(loss.ne(0),100.0)
     lo=l.rolling(14,min_periods=1).min(); hi=h.rolling(14,min_periods=1).max(); out['stochastic']=(c-lo)/(hi-lo).replace(0,np.nan)*100; out['williams_r']=-100*(hi-c)/(hi-lo).replace(0,np.nan); out['cci']=(c-c.rolling(20,min_periods=1).mean())/(c.rolling(20,min_periods=1).std()*0.015); out['roc']=c.pct_change(12)
     out['mfi']=100-100/(1+(np.where(d>0,c*v,0).astype(float).cumsum()/(np.abs(np.where(d<0,c*v,0).astype(float).cumsum())+1e-12)))
     mid=c.rolling(20,min_periods=1).mean(); sd=c.rolling(20,min_periods=1).std(); out['bollinger_upper']=mid+2*sd; out['bollinger_lower']=mid-2*sd; out['keltner_upper']=mid+2*atr; out['keltner_lower']=mid-2*atr; out['donchian_upper']=h.rolling(20,min_periods=1).max(); out['donchian_lower']=l.rolling(20,min_periods=1).min()

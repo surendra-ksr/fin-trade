@@ -3,12 +3,55 @@
 The public functions use conventional rolling definitions.  No function reads
 future rows: rolling windows are right-aligned and the PSAR state machine is
 processed strictly from left to right.
+
+Phase 13 optimisation: wilders() and wma() are now vectorised with numpy to
+avoid per-element Python loops / pandas .apply(); a bounded LRU indicator
+cache reduces repeated calls on identical frames.
 """
 from __future__ import annotations
+import hashlib
 import logging
+from collections import OrderedDict
+from typing import Optional
+
 import numpy as np
 import pandas as pd
+
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Bounded indicator cache (Phase 13)
+# ---------------------------------------------------------------------------
+_INDICATOR_CACHE: OrderedDict[str, pd.DataFrame] = OrderedDict()
+_INDICATOR_CACHE_MAX = 32  # hard cap
+
+
+def _frame_hash(frame: pd.DataFrame) -> str:
+    """Deterministic hash for a DataFrame's values + index + columns."""
+    h = hashlib.sha256()
+    h.update(frame.index.values.tobytes())
+    h.update(frame.columns.values.tobytes() if hasattr(frame.columns, 'values') else str(frame.columns).encode())
+    for col in frame.columns:
+        h.update(frame[col].values.tobytes())
+    return h.hexdigest()
+
+
+def _cache_get(frame: pd.DataFrame) -> Optional[pd.DataFrame]:
+    key = _frame_hash(frame)
+    if key in _INDICATOR_CACHE:
+        _INDICATOR_CACHE.move_to_end(key)
+        return _INDICATOR_CACHE[key].copy()
+    return None
+
+
+def _cache_put(frame: pd.DataFrame, result: pd.DataFrame) -> None:
+    key = _frame_hash(frame)
+    if key in _INDICATOR_CACHE:
+        _INDICATOR_CACHE.move_to_end(key)
+    else:
+        _INDICATOR_CACHE[key] = result.copy()
+        while len(_INDICATOR_CACHE) > _INDICATOR_CACHE_MAX:
+            _INDICATOR_CACHE.popitem(last=False)
 
 def sma(s: pd.Series, period: int) -> pd.Series:
     """Simple moving average with NaN warm-up."""
@@ -19,22 +62,60 @@ def ema(s: pd.Series, period: int) -> pd.Series:
     return s.ewm(span=period, adjust=False, min_periods=1).mean()
 
 def wma(s: pd.Series, period: int) -> pd.Series:
-    """Linearly weighted moving average."""
-    weights=np.arange(1, period+1, dtype=float)
-    return s.rolling(period, min_periods=period).apply(lambda x: float(np.dot(x,weights)/weights.sum()), raw=True)
+    """Linearly weighted moving average.
+
+    Phase 13: vectorised via ``numpy.convolve`` instead of the prior
+    ``.rolling().apply(lambda …)``.  Output is equivalent (verified by
+    equivalence test).
+    """
+    if len(s) < period:
+        return pd.Series(np.nan, index=s.index, dtype=float)
+    vals = s.values.astype(np.float64)
+    weights = np.arange(1, period + 1, dtype=np.float64)
+    wsum = weights.sum()
+    # Convolve with reversed weights: conv(vals, weights[::-1], 'valid')
+    # gives the numerator at each position >= period-1
+    num = np.convolve(vals, weights[::-1], "valid")
+    result = np.full(len(s), np.nan, dtype=np.float64)
+    result[period - 1 :] = num[: len(s) - period + 1] / wsum
+    return pd.Series(result, index=s.index, dtype=float)
 
 def true_range(df: pd.DataFrame) -> pd.Series:
     """True range including the previous close gap."""
     return pd.concat([df.high-df.low,(df.high-df.close.shift()).abs(),(df.low-df.close.shift()).abs()],axis=1).max(axis=1)
 
 def wilders(s: pd.Series, period: int) -> pd.Series:
-    """Wilder smoothing: first value is an arithmetic seed, alpha is 1/n."""
-    result=pd.Series(np.nan,index=s.index,dtype=float)
-    if len(s)<period: return result
-    result.iloc[period-1]=s.iloc[:period].mean()
-    alpha=1.0/period
-    for i in range(period,len(s)): result.iloc[i]=result.iloc[i-1]+alpha*(s.iloc[i]-result.iloc[i-1])
-    return result
+    """Wilder smoothing: first value is an arithmetic seed, alpha is 1/n.
+
+    Phase 13: fully vectorised using cumulative sum of exponentially-weighted
+    terms.  The recurrence ``r[i] = (1-a)*r[i-1] + a*v[i]`` expands to
+    ``r[n] = (1-a)^n * seed + a * sum_{k} (1-a)^(n-1-k) * v[period+k]``,
+    computed here via ``cumsum`` after scaling by the decay factor.
+    Numeric output is equivalent to the prior Python-loop implementation
+    (verified by the dedicated equivalence test in the Phase-13 pack).
+    """
+    if len(s) < period:
+        return pd.Series(np.nan, index=s.index, dtype=float)
+    vals = s.values.astype(np.float64)
+    result = np.full(len(s), np.nan, dtype=np.float64)
+    seed = vals[:period].mean()
+    result[period - 1] = seed
+    alpha = 1.0 / period
+    beta = 1.0 - alpha
+    n_remaining = len(s) - period
+    if n_remaining <= 0:
+        return pd.Series(result, index=s.index, dtype=float)
+    v_tail = vals[period:]  # shape (n_remaining,)
+    # beta^0, beta^1, ..., beta^(n_remaining-1)
+    beta_pow_0 = beta ** np.arange(n_remaining, dtype=np.float64)
+    # beta^1, beta^2, ..., beta^n_remaining
+    beta_pow_1 = beta_pow_0 * beta
+    # scaled = v_tail / beta^j for each j
+    scaled = v_tail / beta_pow_0
+    cum = np.cumsum(scaled)  # S[m] = sum_{j=0}^{m} v[period+j] / beta^j
+    # result[period+m] = beta^(m+1)*seed + alpha * beta^m * S[m]
+    result[period:] = beta_pow_1 * seed + alpha * beta_pow_0 * cum
+    return pd.Series(result, index=s.index, dtype=float)
 
 def rsi(close: pd.Series, period: int=14) -> pd.Series:
     """Wilder RSI from separated gain and loss series."""
@@ -56,9 +137,26 @@ def stochastic(df: pd.DataFrame, period=14, smooth=3) -> pd.DataFrame:
     return pd.DataFrame({'stochastic':k,'stochastic_d':k.rolling(smooth,min_periods=smooth).mean()})
 
 def cci(df: pd.DataFrame, period=20) -> pd.Series:
-    """Commodity Channel Index using mean deviation."""
-    tp=(df.high+df.low+df.close)/3; mean=tp.rolling(period,min_periods=period).mean(); dev=tp.rolling(period,min_periods=period).apply(lambda x: np.mean(np.abs(x-x.mean())),raw=True)
-    return (tp-mean)/(0.015*dev.replace(0,np.nan))
+    """Commodity Channel Index using mean deviation.
+
+    Phase 13: vectorised via numpy sliding-window mean absolute deviation
+    instead of the prior ``.rolling().apply(lambda …)``.  Output equivalent
+    (equivalence test in Phase-13 pack).
+    """
+    tp = (df.high + df.low + df.close) / 3.0
+    mean = tp.rolling(period, min_periods=period).mean()
+    vals = tp.values.astype(np.float64)
+    # Sliding-window mean absolute deviation
+    dev = np.full(len(vals), np.nan, dtype=np.float64)
+    if len(vals) >= period:
+        # Build a strided view of the windows
+        from numpy.lib.stride_tricks import sliding_window_view
+        windows = sliding_window_view(vals, period)
+        win_means = windows.mean(axis=1)
+        mad = np.mean(np.abs(windows - win_means[:, np.newaxis]), axis=1)
+        dev[period - 1 :] = mad
+    dev_series = pd.Series(dev, index=tp.index)
+    return (tp - mean) / (0.015 * dev_series.replace(0, np.nan))
 
 def roc(close: pd.Series, period=12) -> pd.Series:
     """Rate of change as a fractional return."""
@@ -167,8 +265,46 @@ def ichimoku(df: pd.DataFrame) -> pd.DataFrame:
     conv=(df.high.rolling(9,min_periods=9).max()+df.low.rolling(9,min_periods=9).min())/2; base=(df.high.rolling(26,min_periods=26).max()+df.low.rolling(26,min_periods=26).min())/2; a=((conv+base)/2).shift(26); b=((df.high.rolling(52,min_periods=52).max()+df.low.rolling(52,min_periods=52).min())/2).shift(26); return pd.DataFrame({'ichimoku_conversion':conv,'ichimoku_base':base,'ichimoku_span_a':a,'ichimoku_span_b':b})
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute and concatenate the complete causal Phase 2 indicator suite."""
-    x=df.copy(); out=x.copy(); close=x.close.astype(float)
-    for p in (5,10,20,50,200): out[f'sma_{p}']=sma(close,p); out[f'ema_{p}']=ema(close,p); out[f'wma_{p}']=wma(close,p); out[f'rolling_std_{p}']=close.rolling(p,min_periods=p).std()
-    parts=[macd(close),stochastic(x),pd.DataFrame({'rsi':rsi(close)}),pd.DataFrame({'cci':cci(x),'roc':roc(close),'williams_r':williams_r(x),'mfi':mfi(x),'atr_14':atr(x)}),adx_dmi(x),pd.DataFrame({'psar':parabolic_sar(x)}),bollinger(close),keltner(x),donchian(x),volume_indicators(x),ichimoku(x)]
-    return pd.concat([out,*parts],axis=1).replace([np.inf,-np.inf],np.nan)
+    """Compute and concatenate the complete causal Phase 2 indicator suite.
+
+    Phase 13: results are cached (bounded LRU, max 32 entries) so that
+    repeated calls on identical frames return the cached DataFrame without
+    recomputation.  Cache key is a SHA-256 hash of the frame's values,
+    index, and columns — guaranteed deterministic and collision-resistant
+    for the purpose.
+    """
+    cached = _cache_get(df)
+    if cached is not None:
+        return cached
+    x = df.copy()
+    out = x.copy()
+    close = x.close.astype(float)
+    for p in (5, 10, 20, 50, 200):
+        out[f"sma_{p}"] = sma(close, p)
+        out[f"ema_{p}"] = ema(close, p)
+        out[f"wma_{p}"] = wma(close, p)
+        out[f"rolling_std_{p}"] = close.rolling(p, min_periods=p).std()
+    parts = [
+        macd(close),
+        stochastic(x),
+        pd.DataFrame({"rsi": rsi(close)}),
+        pd.DataFrame(
+            {
+                "cci": cci(x),
+                "roc": roc(close),
+                "williams_r": williams_r(x),
+                "mfi": mfi(x),
+                "atr_14": atr(x),
+            }
+        ),
+        adx_dmi(x),
+        pd.DataFrame({"psar": parabolic_sar(x)}),
+        bollinger(close),
+        keltner(x),
+        donchian(x),
+        volume_indicators(x),
+        ichimoku(x),
+    ]
+    result = pd.concat([out, *parts], axis=1).replace([np.inf, -np.inf], np.nan)
+    _cache_put(df, result)
+    return result

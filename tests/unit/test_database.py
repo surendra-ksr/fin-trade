@@ -37,12 +37,12 @@ class TestSchema:
 
     def test_migration_recorded(self, db: DatabaseManager) -> None:
         versions = [r["version"] for r in db.query("SELECT version FROM schema_migrations")]
-        assert versions == [1]
+        assert versions == [1, 2]  # Phase 13 added v2 (hot-query indices)
 
     def test_migrate_is_idempotent(self, db: DatabaseManager) -> None:
         db.migrate()
         versions = [r["version"] for r in db.query("SELECT version FROM schema_migrations")]
-        assert versions == [1]
+        assert versions == [1, 2]  # Phase 13 v2 idempotent
 
     def test_integrity_check(self, db: DatabaseManager) -> None:
         assert db.integrity_check()

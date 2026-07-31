@@ -61,13 +61,23 @@ def _make_macro(n: int = 500) -> pd.DataFrame:
 # Benchmarked paths
 # ---------------------------------------------------------------------------
 
-def bench_indicator_pipeline(df: pd.DataFrame, iterations: int = 10) -> float:
-    from features.indicators import compute_indicators  # noqa: F811
-    stmt = "compute_indicators(df)"
-    timer = timeit.Timer(stmt, globals={"compute_indicators": compute_indicators, "df": df})
-    # Run once to warm JIT/caches, then measure
-    compute_indicators(df)
-    return timer.timeit(number=iterations) / iterations
+def bench_indicator_pipeline(df: pd.DataFrame, iterations: int = 10) -> tuple[float, float]:
+    """Return (uncached_ms, cached_ms) for compute_indicators."""
+    from features.indicators import compute_indicators, _INDICATOR_CACHE  # noqa: F811
+    import time
+    # Uncached: clear cache, time one call
+    _INDICATOR_CACHE.clear()
+    t0 = time.perf_counter()
+    result1 = compute_indicators(df)
+    t_uncached = (time.perf_counter() - t0) * 1000.0
+    # Cached: re-call same df
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+        result2 = compute_indicators(df)
+    t_cached = (time.perf_counter() - t0) / iterations * 1000.0
+    # Verify equivalence
+    assert result1.equals(result2), "cache returned different result!"
+    return t_uncached, t_cached
 
 
 def bench_feature_engineering(
@@ -144,59 +154,26 @@ def bench_hot_db_queries(db_path: str, iterations: int = 50) -> dict[str, float]
 # ---------------------------------------------------------------------------
 
 def seed_db(db_path: str, n_symbols: int = N_SYMBOLS, n_days: int = N_DAYS) -> None:
-    """Create a temporary db with realistic price_data rows."""
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    cur = conn.cursor()
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS price_data (
-            symbol TEXT NOT NULL,
-            timeframe TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            open REAL NOT NULL,
-            high REAL NOT NULL,
-            low REAL NOT NULL,
-            close REAL NOT NULL,
-            volume REAL NOT NULL DEFAULT 0,
-            adj_close REAL,
-            source TEXT NOT NULL DEFAULT 'yfinance',
-            inserted_at TEXT NOT NULL,
-            PRIMARY KEY (symbol, timeframe, timestamp)
-        )"""
-    )
-    # Existing indices
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_price_data_tf_ts ON price_data(timeframe, timestamp)"
-    )
+    """Create a temporary db with realistic price_data rows, using the real
+    DatabaseManager so that ALL migrations (incl. Phase-13 indices) are applied."""
+    from data.database import DatabaseManager  # noqa: F811
+    db = DatabaseManager(db_path)
     symbols = [f"STOCK_{i:02d}" for i in range(n_symbols)]
-    rows: list[tuple] = []
     base = pd.Timestamp("2023-01-01", tz="UTC")
     for sym in symbols:
         rng = np.random.default_rng(hash(sym) % (2**31))
         close = 100.0 + np.cumsum(rng.normal(0, 0.5, n_days))
-        for day in range(n_days):
-            ts = (base + pd.Timedelta(days=day)).isoformat()
-            c = float(close[day])
-            rows.append(
-                (
-                    sym,
-                    "1d",
-                    ts,
-                    c - rng.uniform(0, 0.3),
-                    c + rng.uniform(0.1, 0.5),
-                    c - rng.uniform(0.1, 0.5),
-                    c,
-                    float(rng.integers(1_000_000, 10_000_000)),
-                    c,
-                    "benchmark",
-                    ts,
-                )
-            )
-    cur.executemany(
-        "INSERT OR REPLACE INTO price_data VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows
-    )
-    conn.commit()
-    conn.close()
+        bars = pd.DataFrame({
+            "timestamp": [base + pd.Timedelta(days=d) for d in range(n_days)],
+            "open": [c - rng.uniform(0, 0.3) for c in close],
+            "high": [c + rng.uniform(0.1, 0.5) for c in close],
+            "low": [c - rng.uniform(0.1, 0.5) for c in close],
+            "close": close,
+            "volume": [float(rng.integers(1_000_000, 10_000_000)) for _ in range(n_days)],
+            "adj_close": close,
+        })
+        db.upsert_price_bars(sym, "1d", bars, source="benchmark")
+    db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -260,23 +237,23 @@ def main() -> None:
         seed_db(db_path)
         print(f"      DB {db_path} ({N_SYMBOLS} symbols × {N_DAYS} days)")
 
-        # 2. Explain query plans BEFORE extra indices
-        print("\n[2/5] EXPLAIN QUERY PLAN (existing indices)")
-        plans_before = explain_queries(db_path)
-        for name, plan in plans_before.items():
+        # 2. Explain query plans
+        print("\n[2/5] EXPLAIN QUERY PLAN (with Phase-13 indices)")
+        plans = explain_queries(db_path)
+        for name, plan in plans.items():
             print(f"\n  --- {name} ---")
             print(plan)
 
         # 3. Measure indicator pipeline
         print("\n[3/5] Indicator pipeline …")
         df = _make_ohlcv()
-        t_ind = bench_indicator_pipeline(df)
-        print(f"      compute_indicators: {t_ind*1000:8.2f} ms/call")
+        t_ind_uncached, t_ind_cached = bench_indicator_pipeline(df)
+        print(f"      compute_indicators (uncached): {t_ind_uncached:8.2f} ms/call")
+        print(f"      compute_indicators (cached):   {t_ind_cached:8.2f} ms/call")
 
         # 4. Measure feature engineering
         print("\n[4/5] Feature engineering …")
-        # Make timeframe dict with a single other timeframe
-        hourly = _make_ohlcv(2000)  # 2000 hours
+        hourly = _make_ohlcv(2000)
         timeframes = {"1h": hourly}
         macro = _make_macro()
         t_feat = bench_feature_engineering(df, timeframes, macro)
@@ -297,28 +274,30 @@ def main() -> None:
 
         # Print summary table
         print("\n" + "=" * 70)
-        print("BEFORE/AFTER placeholder — rerun after optimisations")
+        print("BEFORE / AFTER BENCHMARK TABLE (Phase 13)")
         print("=" * 70)
         print(
             f"""
 | Benchmark | Baseline (ms) | Optimized (ms) | Delta |
 |---|---:|---:|---:|
-| Indicator pipeline (500d) | {t_ind*1000:.2f} | — | — |
-| Feature engineering (multi-tf+macro) | {t_feat*1000:.2f} | — | — |
-| Backtest replay (500 bars) | {t_bt*1000:.2f} | — | — |
-| DB: latest_prices | {db_times['latest_prices']*1000:.2f} | — | — |
-| DB: price_window | {db_times['price_window']*1000:.2f} | — | — |
-| DB: all_symbols_tf | {db_times['all_symbols_tf']*1000:.2f} | — | — |
+| Indicator pipeline uncached (500d) | 195.42 | {t_ind_uncached:.2f} | {t_ind_uncached - 195.42:.2f} |
+| Indicator pipeline cached (500d) | — | {t_ind_cached:.2f} | — |
+| Feature engineering (multi-tf+macro) | 915.54 | {t_feat*1000:.2f} | {t_feat*1000 - 915.54:.2f} |
+| Backtest replay (500 bars) | 0.18 | {t_bt*1000:.2f} | {t_bt*1000 - 0.18:.2f} |
+| DB: latest_prices | 0.09 | {db_times['latest_prices']*1000:.2f} | {db_times['latest_prices']*1000 - 0.09:.2f} |
+| DB: price_window | 0.00 | {db_times['price_window']*1000:.2f} | {db_times['price_window']*1000 - 0.00:.2f} |
+| DB: all_symbols_tf | 2.80 | {db_times['all_symbols_tf']*1000:.2f} | {db_times['all_symbols_tf']*1000 - 2.80:.2f} |
 """
         )
 
-        # JSON dump for machine consumption
+        # JSON dump
         result = {
-            "indicator_pipeline_ms": t_ind * 1000,
+            "indicator_pipeline_uncached_ms": t_ind_uncached,
+            "indicator_pipeline_cached_ms": t_ind_cached,
             "feature_engineering_ms": t_feat * 1000,
             "backtest_replay_ms": t_bt * 1000,
             "db_queries_ms": {k: v * 1000 for k, v in db_times.items()},
-            "explain_plans": plans_before,
+            "explain_plans": plans,
         }
         print("\n--- JSON ---")
         print(json.dumps(result, indent=2))

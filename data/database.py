@@ -289,6 +289,18 @@ MIGRATIONS: tuple[tuple[int, str, tuple[str, ...]], ...] = (
     (1, "initial schema (price/fundamental/macro/sentiment/news/signals/"
         "trades/metrics/circuit-breaker/automation/limit-breach/patterns/"
         "breaker-state/system-state)", _SCHEMA_V1),
+    # ------------------------------------------------------------------
+    # Phase 13 optimisation indices (2026-07-31)
+    # ------------------------------------------------------------------
+    (2, "Phase 13: additional hot-query indices on price_data",
+     (
+         # Index for GROUP BY symbol, MAX(timestamp) — the live-trading
+         # "latest bar per symbol" hot path.
+         "CREATE INDEX IF NOT EXISTS idx_price_data_sym_ts ON price_data(symbol, timestamp)",
+         # Covering index for the "all symbols for a timeframe" feature-
+         # engineering query (timeframe → symbol → timestamp).
+         "CREATE INDEX IF NOT EXISTS idx_price_data_tf_sym_ts ON price_data(timeframe, symbol, timestamp)",
+     )),
 )
 
 

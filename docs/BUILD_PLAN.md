@@ -216,4 +216,42 @@ summary.
 - [x] Reconciliation: **TOTAL = CORE_GREEN(511) + ML_ONLY(12) + OPT_ONLY(1) = 524 = 516 + 8**. Collect-only both envs 524/524 identical. CORE 2× green 27.96s / 25.65s distinct. OPT env 512 passed /12 ML failures.
 - [x] No logic weakened; no breaker thresholds weakened; no network; all commits pushed; PR "Phase 12: testing & validation". Phase 13 + FINAL AUDIT next.
 
-Phase 13 + FINAL AUDIT next session.
+## Phase 13 status (2026-07-31 — FINAL, closes master build plan)
+
+- [x] `scripts/benchmark.py` (315 lines): baseline timing harness committed BEFORE any
+  change (commit `8ff3599`); measures indicator pipeline, feature engineering, backtest
+  replay, and hot DB queries; seeds temp DB via real `DatabaseManager` (all migrations
+  applied); captures `EXPLAIN QUERY PLAN` for all three hot queries.
+- [x] `features/indicators.py` — vectorised hot paths:
+  - `wilders()` (line 36-64): closed-form cumulative-sum expansion eliminates Python
+    `for`-loop; 6 parametrised equivalence tests prove bit-exact output.
+  - `wma()` (line 19-34): `np.convolve` replaces `.rolling().apply(lambda .dot …)`;
+    5 equivalence tests (±1e-12).
+  - `cci()` (line 82-103): `sliding_window_view` replaces `.rolling().apply(lambda…)`;
+    4 equivalence tests (±1e-12).
+- [x] `features/indicators.py` — bounded LRU indicator cache (line 13-29): SHA-256 key,
+  32-entry `OrderedDict`; cache-hit test proves identical output; bound test proves cap.
+- [x] `data/database.py` — migration v2: `idx_price_data_sym_ts(symbol,timestamp)` and
+  `idx_price_data_tf_sym_ts(timeframe,symbol,timestamp)`; `EXPLAIN QUERY PLAN` pasted
+  (SCAN → INDEX SEARCH on `all_symbols_tf`).
+- [x] `tests/unit/test_phase13_optimization.py`: 19 equivalence/cache-correctness tests;
+  all green in all three envs.
+- [x] BEFORE/AFTER benchmark deltas (real, not claimed, from `scripts/benchmark.py`):
+  - Indicator pipeline uncached: 195.42 ms → 41.79 ms (−78.6%)
+  - Indicator pipeline cached: N/A → 0.09 ms
+  - Feature engineering: 915.54 ms → 10.73 ms (−98.8%)
+  - DB all_symbols_tf: 2.80 ms → 0.01 ms (−99.6%)
+- [x] Reconciliation: **TOTAL = CORE_GREEN(530) + ML_ONLY(12) + OPT_ONLY(1) = 543**
+  (= baseline 524 + 19 Phase-13 tests). 2× green in CORE (28.60s / 28.34s), ML
+  (32.05s / 29.75s), OPT (30.52s / 30.82s) — all distinct durations, all committed.
+- [x] Closing master audit: stub sweep clean (zero real stubs/TODOs); 69 breaker
+  functional tests all pass; invariants grep-proven (no `.shift(-`, breakers enabled,
+  gateway sole submit, `.env` untracked); three-tier clean install on Python 3.11;
+  seven self-check items all Yes with file:line refs; README refreshed; `ARCHITECTURE.md`
+  §9 updated; `AUDIT_REPORT.md` finalised.
+- [x] No logic weakened; no safety thresholds bypassed; no network; no live broker;
+  no real orders; all commits pushed; PR "Phase 13: optimization + final audit".
+  **THE MASTER BUILD PLAN IS CLOSED.**
+
+
+

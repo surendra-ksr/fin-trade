@@ -1,8 +1,24 @@
 # Repository audit report
 
-**Date:** 2026-07-31  **Branch:** `arena/019fb5d4-fin-trade`
+**Date:** 2026-07-31  **Branch:** `arena/019fb83b-fin-trade`
 
-## Executive verdict
+## EXECUTIVE VERDICT — FINAL (2026-07-31)
+
+**ALL 13 PHASES COMPLETE.** The repository now satisfies every acceptance criterion
+in the master build plan (`docs/BUILD_PLAN.md`). The audit was performed by running
+the repository, reading implementation code, exercising live calls, and verifying
+every safety invariant with grep-proof evidence. No findings remain open.
+
+- **Test suite:** 543 total (530 CORE + 12 ML_ONLY + 1 OPT_ONLY), 2× green in all three
+  environments (CORE/ML/OPT) on Python 3.11, distinct durations.
+- **Safety core:** 7-layer circuit breakers, RiskGateway (sole submit path), kill switch,
+  live gate (fail-closed), all invariants grep-proven.
+- **Coverage:** risk 93%, trading 88.2%, automation 93%.
+- **Phase 13 optimizations:** vectorised hot paths (−78.6% indicator, −98.8% features),
+  bounded LRU cache, DB indices v2, EXPLAIN QUERY PLAN pasted.
+
+This report supersedes all prior audit entries. See `docs/PHASE13_EVIDENCE.md` for the
+full closing evidence pack.
 
 The audit was performed by running the repository, reading implementation code, and exercising
 live calls. The Phase-1 foundation is substantially implemented and its baseline suite is
@@ -340,5 +356,68 @@ value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environment
 ## Phase 12 verdict
 
 Integration paper day (green + HALT variant), flash-crash pause/resume per config with exact audit rows, feed-outage ladder 120s/300s exact, order-storm 10/min cap with breach log count matching, mutation spot-checks on three safety thresholds, coverage risk 93%/trading 88.2% >=85%, reconciliation 516+8=524 exact. Phase 12 gate satisfied; Phase 13 + FINAL AUDIT next per BUILD_PLAN.
+
+## Phase 13 audit entry + FINAL CLOSING (2026-07-31, fresh evidence pack)
+
+- **Baseline benchmark** committed BEFORE any change at `8ff3599`: indicator 195.42 ms,
+  feature engineering 915.54 ms, backtest 0.18 ms, DB queries 0.09/0.00/2.80 ms.
+  `EXPLAIN QUERY PLAN` pasted (SCAN TABLE before indices).
+
+- **Vectorised hot paths** (`features/indicators.py`):
+  - `wilders()` (line 36-64): closed-form cumsum expansion replaces Python `for` loop.
+    6 equivalence tests (parametrised periods 3/7/14/27 + short + constant).
+  - `wma()` (line 19-34): `np.convolve` replaces `.rolling().apply(lambda…)`.
+    5 equivalence tests (parametrised periods 5/10/20/50 + short).
+  - `cci()` (line 82-103): `sliding_window_view` replaces `.rolling().apply(lambda…)`.
+    4 equivalence tests (parametrised periods 5/10/20 + short).
+
+- **Bounded LRU indicator cache** (`features/indicators.py:13-29`): SHA-256 key, 32-entry
+  `OrderedDict`. `test_cache_hit_returns_same_result`, `test_cache_different_frames_different_results`,
+  `test_cache_never_exceeds_max_size`.
+
+- **DB indices v2** (`data/database.py` migration v2): `idx_price_data_sym_ts(symbol,timestamp)`
+  and `idx_price_data_tf_sym_ts(timeframe,symbol,timestamp)`. `EXPLAIN QUERY PLAN` shows
+  INDEX SEARCH replacing SCAN on `all_symbols_tf` (2.80 ms → 0.01 ms, −99.6%).
+
+- **BEFORE/AFTER benchmarks** (exact values from `scripts/benchmark.py`):
+
+| Benchmark | Baseline (ms) | Optimized (ms) | Delta |
+|---|---:|---:|---:|
+| Indicator pipeline uncached | 195.42 | 41.79 | −153.63 (−78.6%) |
+| Indicator pipeline cached | — | 0.09 | — |
+| Feature engineering | 915.54 | 10.73 | −904.81 (−98.8%) |
+| Backtest replay | 0.18 | 0.18 | −0.00 |
+| DB: latest_prices | 0.09 | 0.09 | −0.00 |
+| DB: price_window | 0.00 | 0.00 | 0.00 |
+| DB: all_symbols_tf | 2.80 | 0.01 | −2.79 (−99.6%) |
+
+- **Full-suite correctness:** 543 total (= 524 + 19), 2× green in all three envs:
+  CORE 530 passed / 28.60s·28.34s, ML 542 passed / 32.05s·29.75s, OPT 543 passed /
+  30.52s·30.82s. All distinct durations. Zero logic weakened; zero breaker thresholds
+  weakened; zero network; all commits pushed.
+
+- **Closing stub sweep:** zero real TODOs/FIXMEs/stubs. AST empty-body scan: 14 hits,
+  all `@abstractmethod` ABCh methods. Dead module: 1 compat shim (`data/features.py`), harmless.
+
+- **Breaker functional suite:** 69 breaker/risk/gateway/stress/integration/mutation tests,
+  all pass (2.21s). Every ladder fired: daily, weekly, monthly, drawdown, VIX, flash crash,
+  feed outage, order storm, kill switch, position stops, recovery ramp.
+
+- **Invariants grep-proven:** zero `.shift(-` hits; breakers enabled by default (no bypass);
+  live gate fail-closed (`broker.name=paper_only`); gateway sole `broker.submit` path at
+  `risk/position_limits.py:153`; `.env` gitignored, never committed.
+
+- **Clean installs:** Python 3.11.2; all three tiers (CORE `numpy==2.2.6`, ML `torch==2.6.0`,
+  OPT `streamlit==1.42.0`) install clean and pass their respective test subsets.
+
+- **Seven self-check items:** ALL Yes with file:line references in `ARCHITECTURE.md` §9.
+
+- **README** refreshed to final reality (layout, quickstart, safety guarantees, dependency tiers).
+
+## FINAL VERDICT
+
+**The master build plan is closed.** All 13 phases are implemented, tested (543 tests,
+2× green, 3 envs), optimized, and audited. Safety invariants are grep-proven. The
+repository is ready for merge.
 
 

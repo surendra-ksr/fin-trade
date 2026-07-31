@@ -23,7 +23,7 @@ setuptools==83.0.0
 wheel==0.47.0
 
 # -------------------------------------------------- [CORE] Data handling
-numpy==2.4.6                # numerical arrays (verified core set)
+numpy==2.2.6                # numerical arrays (verified core set)
 pandas==3.0.5               # time-series dataframes (verified core set)
 pyarrow==25.0.0             # Parquet columnar storage for datasets
 sqlalchemy==2.0.51          # optional PostgreSQL backend (SQLite uses stdlib)
@@ -31,12 +31,13 @@ redis==8.1.0                # optional real-time caching layer
 
 # ----------------------------------------------------- [CORE] Data sources
 yfinance==1.5.2             # Yahoo Finance OHLCV + fundamentals (free)
-requests==2.34.2            # HTTP for FRED / SEC EDGAR / fallback endpoints
-beautifulsoup4==4.15.0      # HTML parsing (universe lists, filings)
-lxml==6.1.1                 # fast HTML/XML parser backend
+requests==2.31.0             # broadly compatible Python 3.11 HTTP for FRED / SEC / fallbacks
+beautifulsoup4==4.13.4      # HTML parsing (universe lists, filings)
+lxml==5.4.0                 # fast HTML/XML parser backend
 alpha-vantage==3.0.0        # fundamental + technical API client
 finnhub-python==2.4.29      # news, sentiment, real-time quotes
-polygon-api-client==1.16.3  # tick data, options chains
+# polygon-api-client is optional: its current dependency constraints conflict with the
+# reproducible core provider set; the DataAgent uses the provider protocol instead.
 
 # -------------------------------------------------------- [CORE] Foundation
 PyYAML==6.0.3               # config.yaml parsing
@@ -46,19 +47,20 @@ fastapi==0.141.1            # optional local API / control surface
 uvicorn==0.52.0             # ASGI server for FastAPI
 
 # --------------------------------------------- [PHASE 3+] Machine learning
-scipy==1.18.0               # statistics, optimization
-scikit-learn==1.9.0         # classical ML, preprocessing, metrics
-xgboost==3.3.0              # gradient boosting
-lightgbm==4.7.0             # gradient boosting (fast, leaf-wise)
-optuna==4.9.0               # hyperparameter optimization
+# Last releases with Python 3.11 wheels (the 1.18/1.9 pins do not exist for 3.11).
+scipy==1.15.3               # statistics, optimization
+scikit-learn==1.7.2         # classical ML, preprocessing, metrics
+xgboost==3.0.2              # gradient boosting
+lightgbm==4.6.0             # gradient boosting (fast, leaf-wise)
+optuna==4.5.0               # hyperparameter optimization
 statsmodels==0.14.6         # statistical tests (validation rigor)
-shap==0.52.0                # model explainability
+shap==0.51.0                # latest Python 3.11-compatible model explainability
 
 # --------------------------------------------- [PHASE 4+] Deep learning / RL
-torch==2.13.0               # PyTorch (LSTM / Transformer / CNN models)
-tensorflow==2.21.0          # Keras/TF alternative DL backend
-stable-baselines3==2.9.0    # PPO and other RL algorithms
-gymnasium==1.3.0            # RL environments (trading env)
+torch==2.6.0                # Python 3.11-compatible PyTorch (LSTM / Transformer / CNN models)
+tensorflow==2.20.0          # Python 3.11-compatible Keras/TF alternative DL backend
+stable-baselines3==2.6.0    # Python 3.11-compatible PPO and other RL algorithms
+gymnasium==1.1.1            # RL environments (trading env)
 
 # -------------------------------------------- [PHASE 5+] NLP / sentiment
 transformers==5.14.1        # HuggingFace (FinBERT classification)
@@ -70,7 +72,7 @@ praw==8.0.2                 # Reddit API (r/wallstreetbets etc.)
 tweepy==4.17.0              # Twitter/X API
 
 # -------------------------------------- [PHASE 5+] Technical analysis
-pandas-ta==0.4.71b0         # 130+ indicators, numpy2-compatible
+# pandas-ta intentionally excluded: Phase 2 indicators are pure pandas/numpy (no TA-Lib).
 mplfinance==0.12.10b0       # OHLCV chart rendering
 # TA-Lib requires the system C library (ta-lib) before pip install:
 #   Debian/Ubuntu: install via ta-lib.org source build, then uncomment.
@@ -87,7 +89,7 @@ quantstats==0.0.81          # tearsheets & risk metrics
 # --------------------------------------- [PHASE 10+] Broker integrations
 alpaca-py==0.43.5           # Alpaca REST/WebSocket (commission-free, paper env)
 ib-insync==0.9.86           # Interactive Brokers API wrapper
-ccxt==4.5.70                # crypto exchange connectivity
+ccxt==4.5.70                # Python 3.11-compatible crypto exchange connectivity
 # robin_stocks is an UNOFFICIAL Robinhood client (ToS risk). Never use it for
 # unattended trading; kept commented intentionally.
 # robin-stocks==3.4.0

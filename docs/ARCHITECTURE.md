@@ -180,6 +180,8 @@ Run: `python3 -m pytest tests/unit -q`
 
 ## 8. Implementation Roadmap (spec Part 18)
 
+The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.md).
+
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Foundation: structure, config, logging, DB, data agent, circuit breakers | ✅ done |

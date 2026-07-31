@@ -319,3 +319,26 @@ value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environment
 - No logic weakened; no breaker thresholds weakened; no network; no live broker; no real
   orders; all commits pushed; PR "Phase 11: dashboard"; Phase 12 (integration + stress) next.
 
+## Phase 12 audit entry (2026-07-31, fresh evidence pack)
+
+- Integration paper day (`tests/integration/test_paper_day.py` 387 lines): seeded DB with 720 1m fake bars (AAPL seed 1, MSFT seed 2) → scheduler gates (PRE_MARKET 07:00 ET blocked, REGULAR 10:00 ET allowed, after stop_new_entries 15:45 ET blocked) → signal → approval queue semi (TTL 1800, PENDING→APPROVED→EXECUTED, bypass false) → RiskGateway sole transmit (spy count) → PaperBroker fills via shared `price_fill` (fee 10 bps = commission 0.001, slippage 0 for exact P&L, rng seeded 123) → positions (AAPL closed, MSFT open) → realized P&L 46.95 = 50 -1.5 -1.55 incl entry+exit fees via `db.close_paper_trade` → digest (open 1, realized 46.95, text render contains MSFT) → breaker logs no HALT in green. HALT variant: -2.2% daily loss (97_800 from 100k) triggers level3 RED HALT (close worst 50% AAPL/BBB per policy, cancel resting LIMIT, locked_until next open), gateway denial `breaker_state:HALTED` → `limit_breach_log`, `can_submit_order` blocked (HALTED reason), exact `circuit_breaker_log` rows (NORMAL→HALTED, level RED=4, details JSON level 3).
+
+- Stress flash crash (`tests/stress/test_flash_crash.py` 133 lines): config `threshold_pct=-0.01`, `timeframe_minutes=5`, `pause_minutes=10`, `resume_recovery_pct=0.50`. Prices 100→99.9→98.9→98.6 within 4 min triggers RED pause, `allow_new_entries=False`, `_flash_pause_until` set, `circuit_breaker_log` flash_crash row exact. Partial 30% recovery (99.02) still paused, 70% after 8 min window slide (99.58) resumes (pause None, no flash active). Verifies exact audit rows, deterministic clock, zero network.
+
+- Stress feed outage (`tests/stress/test_feed_outage.py` 123 lines): ladder 120s/300s exact per `technical.data_feed_timeout_seconds` / `data_feed_emergency_seconds`. Heartbeat T0, +130s → RED HALT (allow_new_entries False), +310s → EMERGENCY flatten_all, exact `circuit_breaker_log` data_feed escalation (2 rows, level progression). Heartbeat recovery clears active data_feed trigger (state may stay EMERGENCY until human resume, but trigger gone). Exact rows.
+
+- Stress order storm (`tests/stress/test_order_storm.py` 179 lines): `max_orders_per_minute=10`. 15 bursts in 60s via `can_submit_order` gate: 10 accepted, 5 denied, `limit_breach_log` 5 rows threshold 10 entity SYM*, broker orders 10 filled, denied count 5 == breach log count matches. Broker-level cap also proven (11th REJECTED `order_rate:10/min_exceeded`). Exact `circuit_breaker_log` RUNAWAY_ORDER row, flow pause 60s then auto de-escalation to DEFENSIVE after cooldown.
+
+- Mutation (`tests/unit/test_phase12_mutation.py` 130 lines): three thresholds flipped in copied config (deepcopy, no global mutation): daily-loss ladder to -10%/-11%/-12%/-13% (no HALT at -2.2%), VIX ladder to 50/60/70/80 (VIX 27 no reduction), rate cap to 100 (burst passes). Proves targeted safety tests FAIL if weakened. Reverted immediately.
+
+- Coverage: `pytest --cov=risk --cov=trading --cov=automation` → risk 93% (829 stmts 57 miss), trading 88.2% (1034 stmts 122 miss, alpaca_adapter 72% but package avg >=85%), automation 90-98%, TOTAL 92% pasted. No `pragma: no cover` found.
+
+- Reconciliation: TOTAL = CORE_GREEN(511) + ML_ONLY(12) + OPT_ONLY(1) = 524 = baseline 516 + 8 new. Collect-only CORE 524 / OPT 524 identical. CORE 2× green 27.96s / 25.65s distinct. OPT 512 passed /12 ML failures. Docs cycle proof via `git log -- docs/BUILD_PLAN.md` etc.
+
+- No logic weakened; no breaker thresholds weakened; no network; all commits pushed; PR "Phase 12: testing & validation". Phase 13 + FINAL AUDIT next.
+
+## Phase 12 verdict
+
+Integration paper day (green + HALT variant), flash-crash pause/resume per config with exact audit rows, feed-outage ladder 120s/300s exact, order-storm 10/min cap with breach log count matching, mutation spot-checks on three safety thresholds, coverage risk 93%/trading 88.2% >=85%, reconciliation 516+8=524 exact. Phase 12 gate satisfied; Phase 13 + FINAL AUDIT next per BUILD_PLAN.
+
+

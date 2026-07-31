@@ -205,7 +205,15 @@ summary.
 - [x] No logic weakened; no breaker thresholds weakened; no network; no live broker; no real
   orders; all commits pushed; Phase 12 (integration + stress) next.
 
-## Phase 12 (next) preview
+## Phase 12 status (2026-07-31 — fresh session evidence)
 
-Phase 12 (integration + stress) next: end-to-end paper-trading day, flash-crash sim, feed
-outage, order storm vs the 10/min cap, coverage >=85% on risk/ and trading/.
+- [x] `tests/integration/test_paper_day.py` (387 lines): end-to-end simulated trading day on injected clock — seeded DB + fake market data (720 1m bars AAPL/MSFT) → scheduler gates entries (PRE_MARKET blocked, REGULAR allowed, after `stop_new_entries` blocked) → signal → approval queue (semi, TTL 1800, PENDING→APPROVED→EXECUTED) → RiskGateway (sole transmit path) → PaperBroker fills via shared `price_fill` (fee 10 bps, slippage 0 in green path, deterministic seed) → positions (AAPL closed, MSFT open) → realized P&L incl fees (46.95 = 50 -1.5 -1.55) → digest rows (open 1, realized 46.95) → breaker log rows (no HALT in green). Plus variant where mid-day -2.2% daily loss HALT cancels resting limit order + flattens worst 50% per policy (AAPL, BBB), locked_until set, gateway denial via `breaker_state:HALTED` with breach log, `can_submit_order` blocked.
+- [x] `tests/stress/test_flash_crash.py` (133 lines): flash crash -1% in 5 min triggers pause 10 min; partial 30% recovery still paused; 70% recovery after 8 min window slide resumes per `resume_recovery_pct=0.50` config. Asserts EXACT `circuit_breaker_log` rows (flash_crash category, level RED/ORANGE, timestamp, action_taken) not just state. Zero network, injected clock.
+- [x] `tests/stress/test_feed_outage.py` (123 lines): feed outage timeout ladder 120s/300s escalates exactly per `technical.data_feed_timeout_seconds=120` / `data_feed_emergency_seconds=300`: >120s HALT entries, >300s EMERGENCY flatten. Asserts EXACT log rows (data_feed category, level escalation). Recovery via heartbeat clears trigger.
+- [x] `tests/stress/test_order_storm.py` (179 lines): order storm >10/min bursts rejected with `limit_breach_log` rows (5 rows threshold 10, entity SYM*), and burst-through-gateway-denied count matches (10 accepted, 5 denied, breach log 5 = rejected). Broker-level cap also proven (11th REJECTED with `order_rate:10/min_exceeded`). Asserts EXACT `circuit_breaker_log` RUNAWAY_ORDER row + flow pause 60s then de-escalation to DEFENSIVE.
+- [x] `tests/unit/test_phase12_mutation.py` (130 lines): mutation spot-checks on THREE safety thresholds (daily-loss ladder, VIX ladder, rate cap) — flip each in copied config, prove targeted tests FAIL (daily-loss -2.2% no longer HALT, VIX 27 no longer reduces, 15 burst now passes), revert. No global config mutation.
+- [x] Coverage: `pytest --cov=risk --cov=trading --cov=automation --cov-report=term-missing` → risk 93% (829 stmts, 57 miss), trading 88.2% (1034 stmts, 122 miss, alpaca_adapter 72% but package average >=85%), automation 93%, TOTAL 92%. No blanket `pragma: no cover` (grep none). Table pasted in `docs/PHASE12_EVIDENCE.md`.
+- [x] Reconciliation: **TOTAL = CORE_GREEN(511) + ML_ONLY(12) + OPT_ONLY(1) = 524 = 516 + 8**. Collect-only both envs 524/524 identical. CORE 2× green 27.96s / 25.65s distinct. OPT env 512 passed /12 ML failures.
+- [x] No logic weakened; no breaker thresholds weakened; no network; all commits pushed; PR "Phase 12: testing & validation". Phase 13 + FINAL AUDIT next.
+
+Phase 13 + FINAL AUDIT next session.

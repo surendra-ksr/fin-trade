@@ -216,8 +216,8 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 9 | Automation framework, scheduler routines, watchdog, notifications | ✅ done (`automation/scheduler.py` US market-hours scheduler, America/New_York aware, session/phase detection + NYSE holiday/DST edge handling, all time via injected clock; `automation/approval_queue.py` semi_automated TTL queue persisted in DB, full_auto bypass; `automation/recovery.py` post-halt graduated ramp (25/50/75/100% + cooling-off) integrated with breaker state, capping size through the real RiskGateway; `automation/digest.py` daily digest; `automation/reconcile.py` startup reconciliation that halts on position mismatch) |
 | 10 | Broker adapters (Alpaca paper first), reconciler, live monitor | ✅ done (`trading/broker_base.py` ABC + retry/timeout + live gate; `trading/paper_adapter.py` default; `trading/alpaca_adapter.py` behind live gate + mocked client; kill-switch cancel-all/flatten/token-resume on both; 44 behavioral tests) |
 | 11 | Streamlit dashboard (12 pages) | ✅ done (`dashboard/data.py` PURE python providers (zero Streamlit import → tested in CORE), `dashboard/actions.py` mutation handlers (token-confirmed kill switch + Phase-9 approve/reject), `dashboard/app.py` + `dashboard/pages/*.py` thin Streamlit renderers; offline (local sqlite DB only); read-mostly; auto-refresh config-driven; breaker panel renders STATE_SEVERITY + active TradingPolicy; headless boot smoke (OPT_ONLY env); 34 CORE + 1 OPT_ONLY tests) |
-| 12 | Integration/stress suites, 90-day paper run, docs | planned |
-| 13 | Continuous optimization | ongoing |
+| 12 | Integration/stress suites, 90-day paper run, docs | ✅ done (end-to-end paper day: seeded DB 720 1m bars → scheduler gates → signal → approval queue semi TTL → RiskGateway sole transmit → PaperBroker fills shared price_fill, fee 10 bps, realized P&L 46.95, digest, breaker logs; HALT variant -2.2% daily loss cancels/flatten worst 50% + locked_until + gateway denial + breach log; stress: flash crash -1%/5min pause 10min partial 30% still paused 70% recovery resumes, feed outage 120s/300s ladder exact escalations, order storm >10/min 10 accepted 5 denied limit_breach_log 5 + RUNAWAY_ORDER log; mutation spot-checks daily-loss/VIX/rate cap flipped in copied config prove targeted tests FAIL; coverage risk 93%, trading 88.2%; TOTAL 524 = 516+8) |
+| 13 | Continuous optimization | planned |
 
 ## 9. Self-Check Checklist (spec Part 10 — required section)
 
@@ -380,4 +380,55 @@ collects in CORE (counted toward TOTAL) but the body fails with `ModuleNotFoundE
 streamlit`, and passes in the optional env (launches `streamlit run dashboard/app.py`
 headless, confirms boot within the 30s deadline). Reconciliation:
 `TOTAL = CORE_GREEN + ML_ONLY(12) + OPT_ONLY`.
+
+## Phase 12 testing & validation implementation note (2026-07-31)
+
+Phase 12 is the integration + stress gate. No new production modules — it exercises the
+existing safety core through end-to-end paths with injected clocks and deterministic seeds,
+zero network.
+
+* `tests/integration/test_paper_day.py` (387 lines): one full trading day green + one
+  HALT variant. Green: seeded DB with 720 1m fake bars (AAPL 150, MSFT 300, deterministic
+  walk seed 1/2), scheduler gates (PRE_MARKET blocked, REGULAR allowed, after
+  `stop_new_entries` 15:45 ET blocked), signal → approval queue semi (PENDING→APPROVED→
+  EXECUTED, TTL 1800), RiskGateway sole transmit (verified by spy), PaperBroker fills via
+  shared `price_fill` (fee 10 bps = `backtesting.commission`, slippage 0 for exact P&L),
+  positions (AAPL closed, MSFT open), realized P&L 46.95 including entry+exit fees
+  (via `db.close_paper_trade`), digest aggregates (open 1, realized 46.95, text render),
+  breaker logs (no daily_loss HALT). HALT variant: -2.2% daily loss triggers level3 RED
+  HALT (close worst 50% AAPL/BBB, cancel resting limit, locked_until next open, gateway
+  denial `breaker_state:HALTED` with `limit_breach_log`, `can_submit_order` blocked).
+
+* `tests/stress/test_flash_crash.py` (133 lines): flash crash config
+  `threshold_pct=-0.01`, `timeframe_minutes=5`, `pause_minutes=10`,
+  `resume_recovery_pct=0.50`. Feed 100→99.9→98.9→98.6 within 4 min triggers RED pause
+  10 min, `allow_new_entries=False`, `circuit_breaker_log` exact row (category
+  flash_crash, level RED). Partial 30% recovery still paused, 70% after 8 min window
+  slide resumes (pause None, no flash active). Asserts exact audit rows.
+
+* `tests/stress/test_feed_outage.py` (123 lines): feed outage ladder
+  `timeout=120s`/`emergency=300s`. Heartbeat at T0, +130s → RED HALT,
+  +310s → EMERGENCY flatten_all. Exact `circuit_breaker_log` rows (data_feed level
+  escalation), recovery via heartbeat clears trigger (still EMERGENCY until resume,
+  but active trigger gone).
+
+* `tests/stress/test_order_storm.py` (179 lines): order storm >10/min.
+  `max_orders_per_minute=10`. 15 bursts in 60s via `can_submit_order` gate:
+  10 accepted, 5 denied, `limit_breach_log` 5 rows threshold 10, broker orders 10
+  filled, denied count == breach log count. Broker-level cap also proven (11th
+  REJECTED `order_rate:10/min_exceeded`). Exact `circuit_breaker_log`
+  RUNAWAY_ORDER row, flow pause 60s then de-escalation to DEFENSIVE.
+
+* `tests/unit/test_phase12_mutation.py` (130 lines): mutation spot-checks —
+  daily-loss ladder weakened to -10%/-11%/-12%/-13% (no HALT at -2.2%),
+  VIX ladder to 50/60/70/80 (VIX 27 no reduction), rate cap to 100 (burst
+  passes). Each proves original safety test would FAIL.
+
+Coverage: `pytest --cov=risk --cov=trading --cov=automation` → risk 93%,
+trading 88.2% (>=85%), automation 93%, TOTAL 92%. No `pragma: no cover`.
+
+Reconciliation: TOTAL = CORE_GREEN(511) + ML_ONLY(12) + OPT_ONLY(1) = 524 = baseline 516 + 8 new.
+Collect-only identical 524 in CORE and OPT envs. 2× distinct-duration greens
+27.96s / 25.65s (fresh).
+
 

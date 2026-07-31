@@ -1,12 +1,12 @@
 # Phase 12 — Testing & Validation — Atomic Evidence Pack
 
 **Date:** 2026-07-31  **Branch:** `arena/019fb7fe-fin-trade`
-**Code commit (evidence captured against):** `24bb4cd1fa4ccec987288e548e0910ed4cfaf2a1` (Phase-12 test commit) + docs cycle commit pending
+**Code commit (evidence captured against):** `3b50dbdcb5b77ad503e62ca293cb5d4323222d90` (final docs cycle commit)
 **Baseline TOTAL before phase:** 516
 **New tests:** 8 (2 integration paper-day + 3 stress + 3 mutation)
 **New TOTAL:** 524
 
-Every command below ran against the committed state above (working tree clean for test commit). Outputs are pasted **unedited**. Phase-12 gate requires:
+Every command below ran against the committed state above (working tree clean at final commit). Outputs are pasted **unedited**. Phase-12 gate requires:
 - baseline 516 + 8 = 524 with CORE/ML_ONLY/OPT_ONLY split exact
 - coverage table pasted; risk/ and trading/ >=85%
 - three stress scenario names visible in collect-only
@@ -20,12 +20,13 @@ Every command below ran against the committed state above (working tree clean fo
 
 ```text
 $ git status --short
-(empty — working tree clean at test commit)
+(empty — working tree clean)
 
 $ git rev-parse HEAD
-24bb4cd1fa4ccec987288e548e0910ed4cfaf2a1
+3b50dbdcb5b77ad503e62ca293cb5d4323222d90
 
 $ git log --oneline -5
+3b50dbd Phase 12: testing & validation — docs cycle + evidence pack
 24bb4cd Phase 12: testing & validation — paper day, stress scenarios, mutation checks
 0fc6237 Phase 11: dashboard (#8)
 ...
@@ -341,13 +342,16 @@ Thus split exact: CORE_GREEN 511, ML_ONLY 12, OPT_ONLY 1.
 
 ```text
 $ git log --oneline -1 -- docs/BUILD_PLAN.md
-<commit> Phase 12: testing & validation — docs cycle
+3b50dbd Phase 12: testing & validation — docs cycle + evidence pack
 
 $ git log --oneline -1 -- docs/ARCHITECTURE.md
-<commit> Phase 12: testing & validation — docs cycle
+3b50dbd Phase 12: testing & validation — docs cycle + evidence pack
 
 $ git log --oneline -1 -- docs/AUDIT_REPORT.md
-<commit> Phase 12: testing & validation — docs cycle
+3b50dbd Phase 12: testing & validation — docs cycle + evidence pack
+
+$ git log --oneline -1 -- docs/PHASE12_EVIDENCE.md
+3b50dbd Phase 12: testing & validation — docs cycle + evidence pack
 ```
 
 Docs cycle completed:

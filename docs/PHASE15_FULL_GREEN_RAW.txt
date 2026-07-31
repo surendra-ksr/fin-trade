@@ -1,0 +1,88 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.3.5, pluggy-1.6.0
+rootdir: /home/user/fin-trade
+configfile: pytest.ini
+plugins: cov-6.1.1
+collected 569 items
+
+tests/integration/test_paper_day.py ..                                   [  0%]
+tests/stress/test_feed_outage.py .                                       [  0%]
+tests/stress/test_flash_crash.py .                                       [  0%]
+tests/stress/test_order_storm.py .                                       [  0%]
+tests/unit/test_backtest_engine.py ......                                [  1%]
+tests/unit/test_circuit_breakers.py .................................... [  8%]
+.....................                                                    [ 11%]
+tests/unit/test_config.py ......................                         [ 15%]
+tests/unit/test_constants.py ..................                          [ 18%]
+tests/unit/test_data_agent.py ..............................             [ 24%]
+tests/unit/test_database.py ....................................         [ 30%]
+tests/unit/test_helpers.py ............................................. [ 38%]
+............                                                             [ 40%]
+tests/unit/test_logger.py .............                                  [ 42%]
+tests/unit/test_phase10_broker.py ...................................... [ 49%]
+.......                                                                  [ 50%]
+tests/unit/test_phase11_dashboard.py ..................................  [ 56%]
+tests/unit/test_phase11_dashboard_boot.py .                              [ 56%]
+tests/unit/test_phase12_mutation.py ...                                  [ 57%]
+tests/unit/test_phase13_optimization.py ...................              [ 60%]
+tests/unit/test_phase14_ops.py .....                                     [ 61%]
+tests/unit/test_phase15_alpaca_sandbox.py ....................           [ 65%]
+tests/unit/test_phase2_features.py ...                                   [ 65%]
+tests/unit/test_phase2_numeric.py ................                       [ 68%]
+tests/unit/test_phase2_providers_quality.py ......                       [ 69%]
+tests/unit/test_phase2_vectors.py ...................................... [ 76%]
+..                                                                       [ 76%]
+tests/unit/test_phase3_models.py ...............                         [ 79%]
+tests/unit/test_phase4_models.py .........                               [ 80%]
+tests/unit/test_phase5_models.py .......                                 [ 82%]
+tests/unit/test_phase7_risk_gateway.py ....                              [ 82%]
+tests/unit/test_phase8_order_types.py .............................      [ 87%]
+tests/unit/test_phase8_paper_broker.py .........................         [ 92%]
+tests/unit/test_phase9_automation.py ................................... [ 98%]
+.........                                                                [100%]
+
+============================= 569 passed in 31.48s =============================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.3.5, pluggy-1.6.0
+rootdir: /home/user/fin-trade
+configfile: pytest.ini
+plugins: cov-6.1.1
+collected 569 items
+
+tests/integration/test_paper_day.py ..                                   [  0%]
+tests/stress/test_feed_outage.py .                                       [  0%]
+tests/stress/test_flash_crash.py .                                       [  0%]
+tests/stress/test_order_storm.py .                                       [  0%]
+tests/unit/test_backtest_engine.py ......                                [  1%]
+tests/unit/test_circuit_breakers.py .................................... [  8%]
+.....................                                                    [ 11%]
+tests/unit/test_config.py ......................                         [ 15%]
+tests/unit/test_constants.py ..................                          [ 18%]
+tests/unit/test_data_agent.py ..............................             [ 24%]
+tests/unit/test_database.py ....................................         [ 30%]
+tests/unit/test_helpers.py ............................................. [ 38%]
+............                                                             [ 40%]
+tests/unit/test_logger.py .............                                  [ 42%]
+tests/unit/test_phase10_broker.py ...................................... [ 49%]
+.......                                                                  [ 50%]
+tests/unit/test_phase11_dashboard.py ..................................  [ 56%]
+tests/unit/test_phase11_dashboard_boot.py .                              [ 56%]
+tests/unit/test_phase12_mutation.py ...                                  [ 57%]
+tests/unit/test_phase13_optimization.py ...................              [ 60%]
+tests/unit/test_phase14_ops.py .....                                     [ 61%]
+tests/unit/test_phase15_alpaca_sandbox.py ....................           [ 65%]
+tests/unit/test_phase2_features.py ...                                   [ 65%]
+tests/unit/test_phase2_numeric.py ................                       [ 68%]
+tests/unit/test_phase2_providers_quality.py ......                       [ 69%]
+tests/unit/test_phase2_vectors.py ...................................... [ 76%]
+..                                                                       [ 76%]
+tests/unit/test_phase3_models.py ...............                         [ 79%]
+tests/unit/test_phase4_models.py .........                               [ 80%]
+tests/unit/test_phase5_models.py .......                                 [ 82%]
+tests/unit/test_phase7_risk_gateway.py ....                              [ 82%]
+tests/unit/test_phase8_order_types.py .............................      [ 87%]
+tests/unit/test_phase8_paper_broker.py .........................         [ 92%]
+tests/unit/test_phase9_automation.py ................................... [ 98%]
+.........                                                                [100%]
+
+============================= 569 passed in 30.19s =============================

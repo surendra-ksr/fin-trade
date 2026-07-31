@@ -211,8 +211,8 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 4 | Transformer, RL, CNN patterns, ensemble, continuous learning | ✅ done (`models/ensemble.py` stacked meta-learner with out-of-fold predictions only; `models/regime_detector.py` rule-based VIX/trend/vol regime labels in DB; `models/optimization.py` nested Optuna inside walk-forward with `assert len(overlap)==0`; `models/calibration.py` Platt/isotonic on validation folds only) |
 | 5 | Sentiment engine, self-labeling pattern learning | ✅ done (`models/sentiment.py`: FinBERT + lexicon fallback `version="5.1-sentiment"`, DB persistence; `models/patterns.py`: synthetic candle patterns `version="5.1-patterns"`, self-labeling `label_outcomes` with `t+5/10/20`; 7 behavioral tests) |
 | 6 | Full backtesting: walk-forward, Monte Carlo, breaker simulation, reports | planned |
-| 7 | Order-limit gateway, full breaker UI wiring, recovery polish | (core ✅) planned UI |
-| 8 | All order types + paper engine (4 modes) + transition checklist | planned |
+| 7 | Order-limit gateway, full breaker UI wiring, recovery polish | ✅ done (`risk/position_limits.py` + `RiskGateway` — every order through limits/breakers, breaches → `limit_breach_log`) |
+| 8 | All order types + paper engine (4 modes) + transition checklist | ✅ done (`trading/order_types.py` market/limit/stop/stop-limit/trailing/OCO/bracket with validated state machine + trigger edges; `trading/paper_broker.py` real fills via the shared `backtest.fill_engine.price_fill` core, fees, positions, realized P&L incl. entry fees via `db.close_paper_trade`, idempotency caps — 30s duplicate window + 10 orders/min) |
 | 9 | Automation framework, scheduler routines, watchdog, notifications | planned |
 | 10 | Broker adapters (Alpaca paper first), reconciler, live monitor | planned |
 | 11 | Streamlit dashboard (12 pages) | planned |
@@ -224,8 +224,8 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | # | Requirement | Included? | Where |
 |---|---|---|---|
 | 1 | **Automated trading support** — mode that can send real orders from model signals | **Yes (design + config now; execution code lands Phase 8–10)** | `trading.automation_mode` (manual / semi_automated / full_auto / hybrid), `AutomationMode` enum, automation schedule config; pipeline ≥ Step 1–7 defined in §6 |
-| 2 | **Paper trading support** — virtual balances, same logic as live, no real orders | **Yes (schema + slippage model now; engine Phase 8)** | `paper_trading` config block (4 modes, tiered slippage), `paper_trades` + `performance_metrics` tables ✅, paper-vs-live shared risk gateway design §6 |
-| 3 | **Position & exposure limits** — per-asset, per-strategy, portfolio; configurable; enforced pre-trade with logged rejections | **Yes (config + gateway design now; enforcement Phase 8)** | `order_limits.{per_order,per_stock,per_day,per_portfolio}` ✅ validated, `limit_breach_log` ✅, `max_position_size_pct`, sector concentration, leverage, correlation caps |
+| 2 | **Paper trading support** — virtual balances, same logic as live, no real orders | **Yes ✅ implemented & tested (Phase 8)** | `trading/paper_broker.py` — real fills via shared `backtest.fill_engine.price_fill`, fees, FIFO positions, realized P&L incl. entry fees via `db.close_paper_trade`, idempotency caps (30s duplicate window, 10 orders/min); `paper_trades` + `performance_metrics` tables ✅; gateway-gated placement §6 |
+| 3 | **Position & exposure limits** — per-asset, per-strategy, portfolio; configurable; enforced pre-trade with logged rejections | **Yes ✅ implemented & tested (Phase 7)** | `risk/position_limits.py` `RiskGateway` enforced on every order before transmission; `limit_breach_log` ✅, `order_limits.{per_order,per_stock,per_day,per_portfolio}` ✅, `max_position_size_pct`, sector concentration, leverage, correlation caps |
 | 4 | **Speed breaker loss limits** — daily, weekly, monthly, per-strategy, per-asset, drawdown | **Yes (daily/weekly/monthly/drawdown ✅ implemented & tested; per-strategy/per-asset hooks shipped as metadata hooks: strategy-level limits are enforced via `limit_*` config + `limit_breach_log`, allocated to Phase 8 gateway with per-strategy buckets already in the paper_trades schema)** | `risk/circuit_breakers.py` Layers 2–5 ✅, `circuit_breakers.*` config ladders ✅, `paper_trades.strategy` column ✅ |
 | 5 | **Kill switch / emergency halt** — manual + automatic, cancels orders, optional flatten, human-gated resume | **Yes ✅ implemented & tested** | `activate_kill_switch`, `suspend`, double-confirm `request_override`/`confirm_override`, locked resume, entered states block all entries (policy tests) |
 | 6 | **Broker integration with safety checks** — pluggable adapters, retry/timeout, all orders through the risk gateway | **Yes (design + config + flow gates now; adapters Phase 10)** | `broker` config, `MarketDataProvider` pattern as template, retry/backoff + timeout plumbing ✅, `can_submit_order` flow gate ✅, breaker policy gate ✅ |
@@ -258,3 +258,21 @@ backward joins, mocked provider boundaries, and stale/gap/corporate-jump quality
 performs all admission checks and `transmit()` is the only caller of a broker's low-level
 `submit()`. `PaperBroker.place_order` cannot append an order without going through this boundary;
 all configured limits and breaker buckets are represented by `AppConfig`/`config.yaml`.
+
+## Phase 8 orders + paper trading implementation note (2026-07-31)
+
+`trading/order_types.py` provides the full order-type surface (market, limit, stop, stop-limit,
+trailing-stop, OCO, bracket) with an explicit 8-state machine (`STATE_MACHINE`, illegal
+transitions raise) and a pure trigger engine: gap-through stops execute at the bar open, trailing
+anchors ratchet in the favorable direction only, OCO cancels siblings on fill, and bracket
+children arm on entry fill with the twin cancelled when one leg fills.
+
+`trading/paper_broker.py` is the real paper engine. Every fill is priced through
+`backtest.fill_engine.price_fill` — the single shared fill-pricing path also used by the
+backtester — so the two execution surfaces cannot diverge. Fees come from config
+(`backtesting.commission`/`slippage` in bps), positions are tracked as FIFO lots, and realized
+P&L includes entry fees via `data.database.close_paper_trade` (with `split_paper_trade` keeping
+partial-close fee/slippage balances proportional). Submission is idempotent: the configured 30s
+duplicate window and 10 orders/min cap both reject with explicit reasons. Placement is
+gateway-only: `RiskGateway.transmit` remains the sole caller of the low-level `submit` (grep
+proof in the Phase-8 evidence pack).

@@ -140,6 +140,13 @@ class RiskConfig:
     min_stock_price: float = 5.0
     time_stop_days: int = 10
     max_loss_per_trade_pct: float = 0.02
+    per_strategy_daily_loss_limit_pct: float = 0.02
+    per_strategy_weekly_loss_limit_pct: float = 0.05
+    per_strategy_monthly_loss_limit_pct: float = 0.08
+    per_strategy_max_gross_pct: float = 0.10
+    per_asset_daily_loss_limit_pct: float = 0.02
+    per_asset_weekly_loss_limit_pct: float = 0.05
+    per_asset_monthly_loss_limit_pct: float = 0.08
 
 
 @dataclass

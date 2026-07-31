@@ -251,3 +251,10 @@ are added.
 
 Phase 2 implementation now includes separated causal indicator functions, multi-timeframe
 backward joins, mocked provider boundaries, and stale/gap/corporate-jump quality checks.
+
+## Phase 7 gateway implementation note (2026-07-31)
+
+`risk/position_limits.py` is the mandatory pre-transmission boundary. `RiskGateway.evaluate_order`
+performs all admission checks and `transmit()` is the only caller of a broker's low-level
+`submit()`. `PaperBroker.place_order` cannot append an order without going through this boundary;
+all configured limits and breaker buckets are represented by `AppConfig`/`config.yaml`.

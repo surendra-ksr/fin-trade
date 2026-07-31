@@ -149,3 +149,22 @@ atomic evidence pack is the authoritative verification for this update.
 - Reconciliation: TOTAL = CORE_GREEN(305) + ML_ONLY_Phase3(15) + ML_ONLY_Phase4(9) + ML_ONLY_Phase5(0, offline mock) = 329; `.venv` collect = 329; `.venv-ml` collect = 329; `.venv` run = 305; `.venv-ml` run = 329; both fresh (`21.07s` / `22.59s`).
 - No logic weakened; no safety thresholds bypassed; all commits pushed (`89c15d1` Phase 5 docs + `7d23899` Phase 4 code); `test_nested_optuna_leakage_proof_and_embargo_assertion` renamed from `test_nested_optuna_driver_body_pasted` (real behavioral assertion, not description); working tree clean; `.gitignore` includes `.venv-ml/`; PR open (`https://github.com/surendra-ksr/fin-trade/pull/3` updated to `Phase 4: advanced models`); no permission asked; no relay until Phase 6 gate passes.
 - Phase 5 verdict: Sentiment (offline mock + lexicon fallback + DB persistence) and patterns (synthetic candles + self-labeling with future-only outcomes + DB persistence) fully implemented with behavioral tests. Phase 5 gate satisfied; Phase 6 (backtesting) next per `BUILD_PLAN.md`.
+
+## Verification correction and Phase 7 implementation (2026-07-31)
+
+**CORRECTION:** the Phase-4 audit entry previously cited **307** tests. This is corrected
+with before/after labeling: **before: 307; after: pending fresh per-environment collect-only
+pack from the current commit**. The earlier Phase-6 relay also conflicted (**323 vs 311**);
+that contradiction is preserved rather than silently edited. No phase is called merge-safe
+until the exact fresh outputs reconcile `TOTAL = CORE + ML_ONLY`.
+
+Phase 7 implementation now includes `risk/position_limits.py` and `RiskGateway`. The gateway
+checks per-asset, per-strategy, per-sector, portfolio gross/net, configured daily/weekly/monthly/
+drawdown buckets, and breaker-state entry blocks. Denials are written to `limit_breach_log`
+when a database is supplied. `PaperBroker.place_order` calls `RiskGateway.transmit`; grep
+proof and verbatim function bodies belong in the atomic Phase-7 evidence pack.
+
+**CORRECTION (authoritative current pack):** the pending after-value above is now resolved:
+**before: 307; after: 339 full collect-only items** (`CORE_GREEN=315 + ML_ONLY=24`).
+The Phase-6 before values remain explicitly recorded as **323 vs 311**; the fresh current
+value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environments.

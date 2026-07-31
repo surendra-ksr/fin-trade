@@ -4,6 +4,7 @@
 > ran against the committed state on branch `arena/019fb7d1-fin-trade`. Outputs
 > are pasted unedited. Reconciliation:
 > `TOTAL = CORE_GREEN(469) + ML_ONLY(12) = 481` = prior baseline 437 + 44 new.
+> HEAD at evidence close-out: `3873552970595b5d7842b955eb5c786ed8045f5d` (docs) on top of impl `0b1192c9f84cd829d86f832f25c88ef99c05498d`.
 
 ## TASK 0 — Phase 9 collect-only header lines + "501 items" fragment
 

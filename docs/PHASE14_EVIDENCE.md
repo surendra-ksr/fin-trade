@@ -86,7 +86,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: ${{ matrix.python }}}
+        with:
+          python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip && pip install -r requirements.txt
       - name: Core tests and risk/trading coverage gate
         run: >-
@@ -107,7 +108,9 @@ jobs:
           --cov=risk --cov=trading --cov-report=xml:coverage.xml --cov-fail-under=85
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: coverage-core-py${{ matrix.python }}, path: coverage.xml}
+        with:
+          name: coverage-core-py${{ matrix.python }}
+          path: coverage.xml
 
   extended:
     name: ${{ matrix.tier }} / Python ${{ matrix.python }}
@@ -121,10 +124,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: ${{ matrix.python }}}
+        with:
+          python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip && pip install -r requirements.txt && pip install -r requirements-ml.txt && if [ '${{ matrix.tier }}' = optional ]; then pip install -r requirements-optional.txt; fi
-      - run: pytest tests/unit -q
+      - run: >-
+          pytest tests/unit -q
+          --deselect=tests/unit/test_phase11_dashboard_boot.py::test_dashboard_headless_boot_smoke
 ```
+
+## Live CI corrections — 2026-07-31
+
+- **CORRECTION (a):** The original workflow flow-map `with: { ... }` forms
+  around `${{ ... }}` were invalid YAML in GitHub Actions. The first live CI
+  validation exposed this; every affected action input is now represented as a
+  block-style `with:` mapping in the workflow text above. Core validation is
+  recorded as GitHub Actions run **30637606763** (**Success**, core lane).
+- **CORRECTION (b):** The extended `ml` lane does not install Streamlit. Its
+  command now explicitly deselects
+  `test_dashboard_headless_boot_smoke`, leaving that boot smoke exclusively to
+  the optional lane that installs `requirements-optional.txt`.
 
 ## Security and operational behavior
 

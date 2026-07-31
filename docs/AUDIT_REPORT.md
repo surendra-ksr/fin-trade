@@ -43,7 +43,7 @@ the backtest returned finite metrics. No network was used.
 | Phase 7 gateway | §5 Phase 7 | all orders through limits/risk gateway and breach logging | No `RiskGateway` or `risk/position_limits.py`; `PaperBroker` accepts orders directly | ❌ | source inspection |
 | Phase 8 trading | §5 Phase 8 | order types, fills, positions, fees, idempotency caps | `trading/order_types.py` (7 order types + validated state machine + trigger edges) and `trading/paper_broker.py` (real fills via the shared `price_fill` core, fees, FIFO positions, realized P&L incl. entry fees, 30s duplicate window + 10 orders/min caps) | ✅ | 54 behavioral tests (`test_phase8_order_types.py` 29, `test_phase8_paper_broker.py` 25) |
 | Phase 9 automation | §5 Phase 9 | market guards, approval queue, recovery, reconciliation | `automation/scheduler.py` (US market-hours, America/New_York, DST + holiday aware, injected clock), `automation/approval_queue.py` (semi_automated TTL queue, full_auto bypass, DB-persisted), `automation/recovery.py` (graduated ramp 25/50/75/100% + cooling-off, breaker-integrated, caps size through the real RiskGateway), `automation/digest.py`, `automation/reconcile.py` (halts on position mismatch) | ✅ | 44 behavioral tests (`test_phase9_automation.py`) |
-| Phase 10 brokers | §5 Phase 10 | ABC, retry/timeout, Alpaca gate, kill-switch wiring | Protocol is not the required adapter/gateway implementation | ❌ | source inspection |
+| Phase 10 brokers | §5 Phase 10 | ABC, retry/timeout, Alpaca gate, kill-switch wiring | `trading/broker_base.py` ABC + `with_retry` + `evaluate_live_gate`; paper + mocked-Alpaca adapters; kill-switch cancel-all/flatten/token-resume on both | ✅ | 44 behavioral tests (`test_phase10_broker.py`) |
 | Phase 11 dashboard | §5 Phase 11 | offline Streamlit pages | Package marker only; no app/pages | ❌ | `find dashboard` |
 | Phase 12 validation | §5 Phase 12 | integration/stress suites and coverage | directories contain only `__init__.py`; no scenarios or coverage gate | ❌ | `find tests/integration tests/stress` |
 | Phase 13 optimization | §5 Phase 13 | profiling, caching, indices, benchmark results | No benchmark/profile artifact | ❌ | source/docs inspection |
@@ -88,7 +88,7 @@ policy.
 3. Exposure limits: **No**; no gateway implementation.
 4. Speed breakers: **Yes for Phase-1 daily/weekly/monthly/drawdown breaker core; No for the required per-strategy/per-asset enforcement gateway.**
 5. Kill switch: **Yes in `risk/circuit_breakers.py` for the tested Phase-1 manager; not wired through later broker adapters.**
-6. Broker abstraction: **No** for the required retry/timeout + gateway-before-transmission contract.
+6. Broker abstraction: **Yes ✅ (Phase 10)** — ABC + retry/timeout + live gate + kill-switch through adapters; gateway sole submit path.
 7. Oversight/configurability: **Partial**; config/logging are implemented, dashboard and later operational surfaces are not.
 
 ## Required follow-up
@@ -262,4 +262,24 @@ value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environment
   (TTL + bypass + persistence), recovery ramp (full timeline + cooling-off + REAL RiskGateway
   integration), daily digest, and startup reconciliation fully implemented with behavioral tests.
   Phase 9 gate satisfied.
+
+## Phase 10 audit entry (2026-07-31, fresh evidence pack)
+
+- `trading/broker_base.py` (527 lines): ABC, typed results, error taxonomy, `with_retry`,
+  `evaluate_live_gate`, `build_broker` factory (fail-closed).
+- `trading/paper_adapter.py` (234 lines): default adapter wrapping Phase-8 `PaperBroker`.
+- `trading/alpaca_adapter.py` (526 lines): gated Alpaca adapter + in-memory `MockAlpacaClient`
+  (zero network; `alpaca-py` lazy, optional tier).
+- Kill switch: `engage_kill_switch` = cancel-all + flatten; `resume` = token-confirmed via
+  `CircuitBreakerManager.request_override`/`confirm_override`/`resume`. Exercised on both adapters.
+- Live gate: one test per blocking criterion (paper_days, sharpe, max_drawdown, win_rate,
+  breakers_tested, human_authorization, broker_name) + one all-pass; default `paper_only` fail-closed.
+- Gateway sole path: `grep -rn 'broker\.submit' risk/ trading/` → single hit in
+  `RiskGateway.transmit`.
+- Reconciliation: `TOTAL = CORE_GREEN(469) + ML_ONLY(12) = 481` = prior 437 + 44 new.
+  `.venv` collect=481; `.venv-ml` collect=481; `.venv` run=469 passed / 12 ML-only;
+  `.venv-ml` run=481 passed; 2× green each (distinct durations).
+- No logic weakened; no breaker thresholds weakened; no network; no live broker; no real orders;
+  all commits pushed; working tree clean before evidence reporting; PR open
+  ("Phase 10: broker integration"); Phase 11 (dashboard) next.
 

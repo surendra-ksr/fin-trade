@@ -159,3 +159,14 @@ summary.
   The TOTAL (437) is unchanged and proven by identical collect-only output
   in both environments. No logic weakened; no breaker thresholds weakened;
   all commits pushed; Phase 10 (broker integration) next.
+
+## Phase 10 status (2026-07-31 — fresh session evidence)
+
+- [x] `trading/broker_base.py` (527 lines): ABC `BrokerAdapter` with submit/cancel/replace/positions/orders/account + kill-switch primitives; typed results (`OrderResult`, `PositionSnapshot`, `AccountSnapshot`); error taxonomy (`RetryableBrokerError` vs `TerminalBrokerError` / `BrokerTimeoutError` / `LiveGateDenied`).
+- [x] Retry wrapper `with_retry`: exponential backoff + jitter + per-call timeout; ALL config-driven (`broker.max_retries`, `broker.retry_delay_seconds`, `broker.request_timeout_seconds`); injected sleeper/rng/clock — tests prove attempt counts, delay cap, and timeout without real sleeping.
+- [x] Adapters: `trading/paper_adapter.py` (default, wraps Phase-8 `PaperBroker`) and `trading/alpaca_adapter.py` (`alpaca-py` lazy, `requirements-optional` tier) with fully-mocked `MockAlpacaClient` (zero network). SAME adapter contract test suite runs against BOTH.
+- [x] Live gate `evaluate_live_gate`: Alpaca activates ONLY when `broker.name` demands it AND full gate passes (≥90d paper, Sharpe≥1.0, maxDD≤15%, win rate≥50%, breakers tested, explicit human auth phrase). One test per blocking criterion + one all-pass; default config fail-closed.
+- [x] Kill switch wired through adapter: `engage_kill_switch` = cancel-all + flatten; `resume` = token-confirmed human resume via breaker; exercised against both adapters.
+- [x] Gateway remains the SOLE transmission path (`broker.submit(` only in `RiskGateway.transmit` — grep proof in pack).
+- [x] 44 new behavioral tests (`tests/unit/test_phase10_broker.py`); reconciliation TOTAL = CORE_GREEN(469) + ML_ONLY(12) = 481 = 437 + 44; 2× green both envs (distinct durations).
+- [x] No logic weakened; no safety thresholds bypassed; no network; no live broker; no real orders; all commits pushed; Phase 11 (dashboard) next.

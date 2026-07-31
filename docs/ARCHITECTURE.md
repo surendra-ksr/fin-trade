@@ -214,7 +214,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 7 | Order-limit gateway, full breaker UI wiring, recovery polish | ✅ done (`risk/position_limits.py` + `RiskGateway` — every order through limits/breakers, breaches → `limit_breach_log`) |
 | 8 | All order types + paper engine (4 modes) + transition checklist | ✅ done (`trading/order_types.py` market/limit/stop/stop-limit/trailing/OCO/bracket with validated state machine + trigger edges; `trading/paper_broker.py` real fills via the shared `backtest.fill_engine.price_fill` core, fees, positions, realized P&L incl. entry fees via `db.close_paper_trade`, idempotency caps — 30s duplicate window + 10 orders/min) |
 | 9 | Automation framework, scheduler routines, watchdog, notifications | ✅ done (`automation/scheduler.py` US market-hours scheduler, America/New_York aware, session/phase detection + NYSE holiday/DST edge handling, all time via injected clock; `automation/approval_queue.py` semi_automated TTL queue persisted in DB, full_auto bypass; `automation/recovery.py` post-halt graduated ramp (25/50/75/100% + cooling-off) integrated with breaker state, capping size through the real RiskGateway; `automation/digest.py` daily digest; `automation/reconcile.py` startup reconciliation that halts on position mismatch) |
-| 10 | Broker adapters (Alpaca paper first), reconciler, live monitor | planned |
+| 10 | Broker adapters (Alpaca paper first), reconciler, live monitor | ✅ done (`trading/broker_base.py` ABC + retry/timeout + live gate; `trading/paper_adapter.py` default; `trading/alpaca_adapter.py` behind live gate + mocked client; kill-switch cancel-all/flatten/token-resume on both; 44 behavioral tests) |
 | 11 | Streamlit dashboard (12 pages) | planned |
 | 12 | Integration/stress suites, 90-day paper run, docs | planned |
 | 13 | Continuous optimization | ongoing |
@@ -228,7 +228,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 3 | **Position & exposure limits** — per-asset, per-strategy, portfolio; configurable; enforced pre-trade with logged rejections | **Yes ✅ implemented & tested (Phase 7)** | `risk/position_limits.py` `RiskGateway` enforced on every order before transmission; `limit_breach_log` ✅, `order_limits.{per_order,per_stock,per_day,per_portfolio}` ✅, `max_position_size_pct`, sector concentration, leverage, correlation caps |
 | 4 | **Speed breaker loss limits** — daily, weekly, monthly, per-strategy, per-asset, drawdown | **Yes (daily/weekly/monthly/drawdown ✅ implemented & tested; per-strategy/per-asset hooks shipped as metadata hooks: strategy-level limits are enforced via `limit_*` config + `limit_breach_log`, allocated to Phase 8 gateway with per-strategy buckets already in the paper_trades schema)** | `risk/circuit_breakers.py` Layers 2–5 ✅, `circuit_breakers.*` config ladders ✅, `paper_trades.strategy` column ✅ |
 | 5 | **Kill switch / emergency halt** — manual + automatic, cancels orders, optional flatten, human-gated resume | **Yes ✅ implemented & tested** | `activate_kill_switch`, `suspend`, double-confirm `request_override`/`confirm_override`, locked resume, entered states block all entries (policy tests) |
-| 6 | **Broker integration with safety checks** — pluggable adapters, retry/timeout, all orders through the risk gateway | **Yes (design + config + flow gates now; adapters Phase 10)** | `broker` config, `MarketDataProvider` pattern as template, retry/backoff + timeout plumbing ✅, `can_submit_order` flow gate ✅, breaker policy gate ✅ |
+| 6 | **Broker integration with safety checks** — pluggable adapters, retry/timeout, all orders through the risk gateway | **Yes ✅ implemented & tested (Phase 10)** | `trading/broker_base.py` ABC (`submit`/`cancel`/`replace`/`positions`/`orders`/`account` + kill-switch); `with_retry` exponential backoff+jitter+timeout (config-driven, injected sleeper); paper + gated Alpaca adapters; `evaluate_live_gate` fail-closed (≥90d/Sharpe≥1/maxDD≤15%/WR≥50%/breakers/human auth); gateway sole `broker.submit` path |
 | 7 | **Human oversight & configurability** — everything configurable without code, documented, logged, visible | **Yes ✅** | full `config.yaml` (200+ knobs, validated), per-category JSON logs + audit tables (`circuit_breaker_log`, `automation_log`, `limit_breach_log`), `.env.example` docs, dashboard pages planned Phase 11 |
 
 All seven answers are **Yes**: the Phase‑1 codebase implements items 4–6 core
@@ -321,3 +321,28 @@ the breaker as a sticky `POSITION_MISMATCH` that halts new entries per policy un
 clears it. The recovery ramp and approval queue never weaken a breaker threshold — they only
 gate *when* and *at what size* work may run; all risk enforcement still belongs to the
 `RiskGateway` and the circuit breakers.
+
+## Phase 10 broker integration implementation note (2026-07-31)
+
+`trading/broker_base.py` is the unified adapter contract. `BrokerAdapter` ABC exposes
+submit/cancel/replace/positions/orders/account plus kill-switch primitives
+(`cancel_all`, `flatten`, `engage_kill_switch`, token-confirmed `resume`). Typed results
+(`OrderResult`, `PositionSnapshot`, `AccountSnapshot`) and an explicit error taxonomy
+(`RetryableBrokerError` vs `TerminalBrokerError` / `BrokerTimeoutError` / `LiveGateDenied`)
+keep callers honest.
+
+`with_retry` is the **retry wrapper**: exponential backoff + jitter + per-call timeout,
+ALL knobs from `broker.*` config, sleeper/rng/clock injected so tests prove attempt counts,
+the delay cap, and the timeout path without real sleeping.
+
+`evaluate_live_gate` is the **live-gate evaluation**: Alpaca activates only when
+`broker.name` demands it AND every criterion passes (paper days ≥ 90, Sharpe ≥ 1.0,
+max drawdown ≤ 15%, win rate ≥ 50%, breakers tested, explicit human auth phrase). Default
+config (`broker.name=paper_only`) is fail-closed.
+
+Adapters: `trading/paper_adapter.py` (default, wraps Phase-8 `PaperBroker`) and
+`trading/alpaca_adapter.py` (`alpaca-py` lazy from `requirements-optional.txt`, fully-mocked
+`MockAlpacaClient` for zero-network tests). The same contract suite runs against both.
+`RiskGateway.transmit` remains the sole caller of low-level `submit` (grep proof in the
+Phase-10 evidence pack).
+

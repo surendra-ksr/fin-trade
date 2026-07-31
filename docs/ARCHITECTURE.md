@@ -227,3 +227,6 @@ compatibility re-export shim. `features/feature_engineer.py` uses backward-only 
 multi-timeframe and intermarket data. Phase 2 provider APIs are credential-gated and injectable.
 The roadmap remains open until mocked provider tests and the remaining quality edge-case tests
 are added.
+
+Phase 2 implementation now includes separated causal indicator functions, multi-timeframe
+backward joins, mocked provider boundaries, and stale/gap/corporate-jump quality checks.

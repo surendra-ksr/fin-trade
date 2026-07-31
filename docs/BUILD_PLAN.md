@@ -33,3 +33,10 @@ a concrete need.
 - [x] Quality module and compatibility shim consolidation
 - [x] Credential-gated Alpha Vantage, SEC facts, options surface, and news ingestion APIs
 - [ ] Provider-extension mocked HTTP tests and full production-grade data-quality gap/stale/action tests (follow-up required before final phase closure)
+
+### Phase 2 close-out evidence (2026-07-31)
+- [x] Canonical indicator suite and separated volume functions
+- [x] Numeric vector and edge-case tests
+- [x] Causal multi-timeframe/intermarket/macro pipeline
+- [x] Mocked provider and quality behavioral tests
+- [x] Core and ML-tier clean installs validated on Python 3.11

@@ -96,3 +96,9 @@ policy.
 This report is a blocking audit result, not a claim of completion. The ❌ items above require real
 implementations and dedicated behavior tests before the repository can truthfully be declared
 complete against the supplied master plan.
+
+## Phase 2 re-audit update
+
+The branch now contains separated indicator functions, expanded causal feature engineering,
+provider-boundary tests, quality tests, numeric vectors, and a clean ML-tier install. The
+atomic evidence pack is the authoritative verification for this update.

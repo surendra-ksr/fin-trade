@@ -255,3 +255,13 @@ summary.
 
 
 
+
+## Phase 15 status (2026-07-31 — implementation)
+
+- [x] `broker.alpaca` config section added with `base_url` defaulting to `https://paper-api.alpaca.markets`, `mode: paper|live`, and Alpaca-specific timeout/retry fields; validation rejects unknown modes and invalid retry/timeout values.
+- [x] `trading/alpaca_adapter.py` now accepts an explicit `base_url` and fail-closes construction: `mode=live` or any non-paper URL requires `evaluate_live_gate()` all-pass evidence or raises `LiveGateDenied`. The canonical paper endpoint constructs without live-gate evidence.
+- [x] `automation/reconcile.py` adds optional `reconcile_alpaca_paper()` comparison of DB `paper_trades` positions against Alpaca paper adapter positions. Enabled comparisons delegate to the existing `POSITION_MISMATCH` sticky halt path and write detailed `automation_log` rows; disabled comparisons log `skipped` without touching the adapter.
+- [x] `scripts/alpaca_sandbox_smoke.py` implements the ordered paper-sandbox smoke with `--dry-run`, explicit exit codes, account/positions, tiny market buy, fill wait, limit place/cancel, adapter kill switch, token-confirmed resume, and redacted transcript output. The real paper run reads credentials only from `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` in the environment or local `.env`; no keys are accepted on CLI or printed.
+- [x] `MockAlpacaClient` extended with paper-endpoint semantics, order pagination, account ids for redaction tests, and queued Alpaca-style error payloads. All new tests are zero-network and mocked.
+- [x] Reconciliation target for the evidence gate: **TOTAL = CORE_GREEN(556) + ML_ONLY(12) + OPT_ONLY(1) = 569 = baseline 548 + 21**. Two fresh core-green runs and per-environment collect-only outputs are recorded in `docs/PHASE15_EVIDENCE.md`; live sandbox transcript is `PENDING-USER-RUN` unless the operator supplies a redacted transcript.
+

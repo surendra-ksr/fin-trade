@@ -431,3 +431,30 @@ permission; see `PHASE14_EVIDENCE.md` for the exact owner-installable file.
 repository is ready for merge.
 
 
+
+## Phase 15 audit entry (2026-07-31 — Alpaca paper sandbox)
+
+- `config.yaml` / `utils.config`: nested `broker.alpaca` configuration with
+  paper default URL, `mode: paper|live`, and Alpaca-specific retry/timeout knobs.
+  Validation rejects unknown modes and invalid retry/timeout values.
+- `trading/alpaca_adapter.py`: explicit `base_url` support plus fail-closed URL
+  gate. Any non-paper host, or `mode=live`, requires `evaluate_live_gate()`
+  all-pass evidence; otherwise construction raises `LiveGateDenied`. The paper
+  endpoint remains sandbox-constructible and every placement path uses
+  `RiskGateway -> adapter.place_order`.
+- `automation/reconcile.py`: `reconcile_alpaca_paper()` optionally compares DB
+  positions against Alpaca paper adapter positions and reuses the existing
+  `POSITION_MISMATCH` sticky halt plus `automation_log` audit path.
+- `scripts/alpaca_sandbox_smoke.py`: operator-run ordered smoke with `--dry-run`
+  and explicit exit codes. It reads credentials only from
+  `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` in env/`.env`, never from chat/CLI,
+  and prints a redacted transcript. The real Alpaca transcript is not fabricated;
+  if credentials are absent, the evidence pack marks it `PENDING-USER-RUN` with
+  the exact command.
+- `MockAlpacaClient`: paper endpoint semantics, account id redaction surface,
+  paginated order payloads, and queued Alpaca-style error payloads. All unit tests
+  are zero-network.
+- Evidence target: `TOTAL = CORE_GREEN(556) + ML_ONLY(12) + OPT_ONLY(1) = 569`
+  (`548 + 21`). See `docs/PHASE15_EVIDENCE.md` for gate outputs, verbatim bodies,
+  grep proof, and sandbox transcript status.
+

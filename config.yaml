@@ -381,10 +381,18 @@ automation:
 broker:
   name: "paper_only"                # alpaca | ibkr | paper_only
   paper_trading: true               # use the broker's paper environment
+  # Legacy flat defaults are kept for compatibility; the Phase-15 Alpaca
+  # adapter reads the nested broker.alpaca section below.
   alpaca_base_url: "https://paper-api.alpaca.markets"
   request_timeout_seconds: 15
   max_retries: 3
   retry_delay_seconds: 10
+  alpaca:
+    base_url: "https://paper-api.alpaca.markets"  # default paper endpoint
+    mode: "paper"                                  # paper | live
+    request_timeout_seconds: 15
+    max_retries: 3
+    retry_delay_seconds: 10
   ibkr_host: "${IBKR_HOST}"
   ibkr_port: 7497
   ibkr_client_id: 1
@@ -430,8 +438,8 @@ api_keys:
   reddit_secret: "${REDDIT_SECRET}"
   reddit_user_agent: "${REDDIT_USER_AGENT}"
   twitter_bearer: "${TWITTER_BEARER}"
-  alpaca_api_key: "${ALPACA_KEY}"
-  alpaca_secret_key: "${ALPACA_SECRET}"
+  alpaca_api_key: "${APCA_API_KEY_ID}"
+  alpaca_secret_key: "${APCA_API_SECRET_KEY}"
 
 # -----------------------------------------------------------------------------
 # Dashboard (Phase 11) — offline Streamlit control surface.

@@ -366,14 +366,25 @@ def test_build_broker_paper_default(cfg):
     assert adapter.name == "paper"
 
 
-def test_build_broker_alpaca_blocked_without_gate(cfg):
+def test_build_broker_alpaca_live_url_blocked_without_gate(cfg):
     cfg.broker.name = "alpaca"
+    cfg.broker.alpaca.base_url = "https://api.alpaca.markets"
     with pytest.raises(LiveGateDenied):
         build_broker(cfg, evidence=LiveGateEvidence())  # empty = all fail
 
 
-def test_build_broker_alpaca_requires_gate_and_accepts_mock(cfg, mock_alpaca):
+def test_build_broker_alpaca_paper_accepts_mock_without_live_gate(cfg, mock_alpaca):
     cfg.broker.name = "alpaca"
+    cfg.broker.alpaca.base_url = "https://paper-api.alpaca.markets"
+    cfg.broker.alpaca.mode = "paper"
+    adapter = build_broker(cfg, alpaca_client=mock_alpaca)
+    assert isinstance(adapter, AlpacaBrokerAdapter)
+    assert adapter.name == "alpaca"
+
+
+def test_build_broker_alpaca_live_url_accepts_mock_with_gate(cfg, mock_alpaca):
+    cfg.broker.name = "alpaca"
+    cfg.broker.alpaca.base_url = "https://api.alpaca.markets"
     adapter = build_broker(
         cfg, evidence=_passing_evidence(), alpaca_client=mock_alpaca,
     )
@@ -602,9 +613,14 @@ def test_alpaca_module_has_no_network_call_sites_outside_client():
 
 
 def test_mock_alpaca_client_is_fully_in_memory():
-    """Zero-network proof: MockAlpacaClient has no network attributes."""
+    """Zero-network proof: MockAlpacaClient has no network call sites.
+
+    Phase 15 gives the mock paper-endpoint semantics, so endpoint strings may
+    legitimately contain ``https://``; the invariant is that the mock never
+    imports or calls network libraries.
+    """
     src = inspect.getsource(MockAlpacaClient)
-    for needle in ("requests", "http", "socket", "urlopen", "alpaca.trading"):
+    for needle in ("requests", "socket", "urlopen", "alpaca.trading"):
         assert needle not in src
 
 

@@ -27,7 +27,7 @@ from utils.config import AppConfig, load_config
 from utils.helpers import to_iso_z, utc_now
 from utils.logger import get_logger
 
-__all__ = ["ReconcileResult", "reconcile_positions"]
+__all__ = ["ReconcileResult", "reconcile_positions", "reconcile_alpaca_paper"]
 
 _log = get_logger("automation")
 
@@ -68,15 +68,28 @@ def _db_positions(db: DatabaseManager, portfolio_id: str) -> dict[str, float]:
     return net
 
 
-def _normalize_broker(positions: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+def _pos_value(pos: Any, *names: str, default: Any = None) -> Any:
+    """Mapping/dataclass/object position attribute helper."""
+    if isinstance(pos, Mapping):
+        for name in names:
+            if name in pos:
+                return pos[name]
+        return default
+    for name in names:
+        if hasattr(pos, name):
+            return getattr(pos, name)
+    return default
+
+
+def _normalize_broker(positions: Sequence[Any]) -> dict[str, float]:
     """Broker positions (various key spellings) -> symbol -> signed quantity."""
     net: dict[str, float] = {}
     for pos in positions or []:
-        symbol = str(pos.get("symbol") or pos.get("Symbol") or "").upper()
+        symbol = str(_pos_value(pos, "symbol", "Symbol", default="")).upper()
         if not symbol:
             continue
-        qty = pos.get("quantity", pos.get("qty", pos.get("shares", 0.0)))
-        side = str(pos.get("side", pos.get("position", "long"))).lower()
+        qty = _pos_value(pos, "quantity", "qty", "shares", default=0.0)
+        side = str(_pos_value(pos, "side", "position", default="long")).lower()
         signed = abs(float(qty)) * (1.0 if side in {"long", "buy"} else -1.0)
         net[symbol] = net.get(symbol, 0.0) + signed
     return net
@@ -84,13 +97,15 @@ def _normalize_broker(positions: Sequence[Mapping[str, Any]]) -> dict[str, float
 
 def reconcile_positions(
     db: DatabaseManager,
-    broker_positions: Sequence[Mapping[str, Any]],
+    broker_positions: Sequence[Any],
     *,
     config: Optional[AppConfig] = None,
     breaker: Any = None,
     portfolio_id: str = "default",
     tolerance: float = DEFAULT_TOLERANCE,
     now_fn: Optional[Callable[[], datetime]] = None,
+    routine: str = "reconcile",
+    action: str = "startup_reconciliation",
 ) -> ReconcileResult:
     """Compare DB positions vs ``broker_positions``; halt on mismatch.
 
@@ -153,9 +168,82 @@ def reconcile_positions(
         f"halted={'yes' if result.halted else 'no'}")
     try:
         db.log_automation(
-            "reconcile", "startup_reconciliation",
+            routine, action,
             "halt" if result.halted else "ok", details=details)
     except Exception as exc:
         _log.warning("could not persist reconciliation result: {}", exc)
     _log.info("reconciliation: {}", result.summary)
     return result
+
+
+def reconcile_alpaca_paper(
+    db: DatabaseManager,
+    *,
+    adapter: Any = None,
+    config: Optional[AppConfig] = None,
+    breaker: Any = None,
+    portfolio_id: str = "default",
+    tolerance: float = DEFAULT_TOLERANCE,
+    now_fn: Optional[Callable[[], datetime]] = None,
+    adapter_enabled: Optional[bool] = None,
+) -> ReconcileResult:
+    """Optionally compare DB positions against Alpaca paper adapter positions.
+
+    The comparison is enabled when ``adapter_enabled`` is true, or by config
+    when ``broker.name == 'alpaca'`` and ``broker.alpaca.mode == 'paper'``.
+    When disabled, the broker is not touched and a skipped row is written to
+    ``automation_log``.  When enabled, this delegates to
+    :func:`reconcile_positions`, so mismatches use the existing
+    ``POSITION_MISMATCH`` sticky-halt path and the same detailed
+    ``automation_log`` payload as startup reconciliation.
+    """
+    cfg = config or load_config()
+    now = (now_fn or utc_now)()
+    enabled = bool(adapter_enabled) if adapter_enabled is not None else (
+        str(cfg.broker.name).lower() == "alpaca"
+        and str(cfg.broker.alpaca.mode).lower() == "paper"
+    )
+    if not enabled or adapter is None:
+        result = ReconcileResult(halted=False, summary="alpaca_paper_compare=skipped")
+        try:
+            db.log_automation(
+                "reconcile",
+                "alpaca_paper_compare",
+                "skipped",
+                details={
+                    "enabled": enabled,
+                    "adapter_present": adapter is not None,
+                    "at": to_iso_z(now),
+                },
+                timestamp=now,
+            )
+        except Exception as exc:
+            _log.warning("could not persist skipped Alpaca reconciliation: {}", exc)
+        return result
+
+    try:
+        broker_positions = adapter.positions()
+    except Exception as exc:
+        try:
+            db.log_automation(
+                "reconcile",
+                "alpaca_paper_compare",
+                "error",
+                details={"error": str(exc), "at": to_iso_z(now)},
+                timestamp=now,
+            )
+        except Exception:
+            pass
+        raise
+
+    return reconcile_positions(
+        db,
+        broker_positions,
+        config=cfg,
+        breaker=breaker,
+        portfolio_id=portfolio_id,
+        tolerance=tolerance,
+        now_fn=lambda: now,
+        routine="reconcile",
+        action="alpaca_paper_compare",
+    )

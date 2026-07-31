@@ -414,6 +414,16 @@ Integration paper day (green + HALT variant), flash-crash pause/resume per confi
 
 - **README** refreshed to final reality (layout, quickstart, safety guarantees, dependency tiers).
 
+## Phase 14 CI evidence correction — 2026-07-31
+
+The Phase 14 evidence pack records two post-audit workflow corrections from
+first live validation: GitHub Actions `with:` inputs use block-style YAML
+rather than invalid flow-map forms around `${{ }}`, and the extended ML lane
+deselects the Streamlit-only dashboard boot smoke. GitHub Actions run
+**30637606763** completed successfully for the core lane. The workflow remains
+a documented owner hand-off because the Arena GitHub App lacks `workflows`
+permission; see `PHASE14_EVIDENCE.md` for the exact owner-installable file.
+
 ## FINAL VERDICT
 
 **The master build plan is closed.** All 13 phases are implemented, tested (543 tests,

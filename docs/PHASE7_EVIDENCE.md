@@ -1,13 +1,11 @@
 # Phase 7 atomic evidence pack
 
-Date (UTC):
-2026-07-31T09:48:44Z
+2026-07-31T09:51:11Z
 
 ## Git state
  D CONTINUATION_PROMPT.md
-?? docs/PHASE7_EVIDENCE.md
-fec5ba44773f36a46f652566a6bca977d254a85e
-fec5ba4 Implement Phase 7 risk limits and gateway
+0fed234b238502f93b6621004764864487ff5f3a
+0fed234 Add Phase 7 verification evidence and threshold vector
 
 ## Full collect-only: core .venv
 ============================= test session starts ==============================
@@ -422,7 +420,7 @@ collected 339 items
         <Function test_gateway_is_only_paper_transmission_path>
         <Function test_per_strategy_and_asset_loss_buckets_are_denied>
 
-========================= 339 tests collected in 0.14s =========================
+========================= 339 tests collected in 0.15s =========================
 
 ## Full collect-only: ML .venv-ml
 ============================= test session starts ==============================
@@ -866,7 +864,7 @@ tests/unit/test_phase2_vectors.py ...................................... [ 95%]
 tests/unit/test_phase5_models.py .......                                 [ 98%]
 tests/unit/test_phase7_risk_gateway.py ....                              [100%]
 
-============================= 315 passed in 20.31s =============================
+============================= 315 passed in 20.99s =============================
 
 ## Core-green run 2 (ML-only files excluded)
 ============================= test session starts ==============================
@@ -895,7 +893,7 @@ tests/unit/test_phase2_vectors.py ...................................... [ 95%]
 tests/unit/test_phase5_models.py .......                                 [ 98%]
 tests/unit/test_phase7_risk_gateway.py ....                              [100%]
 
-============================= 315 passed in 20.88s =============================
+============================= 315 passed in 20.99s =============================
 
 ## ML run 1
 ============================= test session starts ==============================
@@ -926,7 +924,7 @@ tests/unit/test_phase4_models.py .........                               [ 96%]
 tests/unit/test_phase5_models.py .......                                 [ 98%]
 tests/unit/test_phase7_risk_gateway.py ....                              [100%]
 
-============================= 339 passed in 24.12s =============================
+============================= 339 passed in 23.45s =============================
 
 ## ML run 2
 ============================= test session starts ==============================
@@ -957,7 +955,7 @@ tests/unit/test_phase4_models.py .........                               [ 96%]
 tests/unit/test_phase5_models.py .......                                 [ 98%]
 tests/unit/test_phase7_risk_gateway.py ....                              [100%]
 
-============================= 339 passed in 23.48s =============================
+============================= 339 passed in 22.76s =============================
 
 ## Reconciliation
 TOTAL = CORE_GREEN(315) + ML_ONLY(24) = 339
@@ -994,36 +992,8 @@ tests/unit/test_phase7_risk_gateway.py:48:def test_per_strategy_and_asset_loss_b
   128 models/sentiment.py
   198 models/patterns.py
   326 total
-def _lexicon_score
-    def __init__
-    def score_text
-    def score_news_row
-    def process_batch
-def detect_doji
-def detect_hammer
-def detect_engulfing
-    def __init__
-    def detect_patterns
-    def label_outcomes
-
-## All behavioral test names with one-line purpose
-tests/unit/test_phase5_models.py:21:def test_sentiment_lexicon_fallback_deterministic():
-tests/unit/test_phase5_models.py:36:def test_sentiment_engine_offline_without_model():
-tests/unit/test_phase5_models.py:47:def test_sentiment_process_batch_persists():
-tests/unit/test_phase5_models.py:67:def test_pattern_detection_on_synthetic_candles():
-tests/unit/test_phase5_models.py:80:def test_pattern_engine_synthetic_candles():
-tests/unit/test_phase5_models.py:96:def test_self_labeling_uses_only_future_bars():
-tests/unit/test_phase5_models.py:132:def test_pattern_self_labeling_contract():
-tests/unit/test_backtest_engine.py:13:def test_execute_next_bar_fill_function_pasted():
-tests/unit/test_backtest_engine.py:30:def test_match_fill_series_event_driven_length():
-tests/unit/test_backtest_engine.py:46:def test_execute_next_bar_function_pasted():
-tests/unit/test_backtest_engine.py:56:def test_execute_next_bar_flat_signal():
-tests/unit/test_backtest_engine.py:69:def test_anti_lookahead_backtest_does_not_read_future_features():
-tests/unit/test_backtest_engine.py:89:def test_generate_report_function_pasted():
-tests/unit/test_phase7_risk_gateway.py:11:def test_asset_strategy_sector_and_portfolio_denials():
-tests/unit/test_phase7_risk_gateway.py:31:def test_all_speed_breakers_and_restricted_halted_entries_denied():
-tests/unit/test_phase7_risk_gateway.py:40:def test_gateway_is_only_paper_transmission_path():
-tests/unit/test_phase7_risk_gateway.py:48:def test_per_strategy_and_asset_loss_buckets_are_denied():
+models/sentiment.py lines= 128 docstrings= 6
+models/patterns.py lines= 198 docstrings= 7
 
 ## Docs update proof
 fec5ba4 Implement Phase 7 risk limits and gateway
@@ -1033,17 +1003,6 @@ bf9faca Merge Phase 6: backtesting + Phase 5 sentiment & patterns
 ./risk/position_limits.py:146:        return broker.submit(order)
 ./trading/core.py:30:    def submit(self, request: OrderRequest) -> Order:
 ./trading/core.py:41:    def submit(self, request: OrderRequest) -> Any:
-
-## Pattern tolerance derivation
-20-# Pattern definitions using OHLC values
-21-
-22:def detect_doji(open_p: float, high_p: float, low_p: float, close_p: float, period: int = 5) -> bool:
-23-    """Doji: open ≈ close (within 0.5% of range) with visible wicks."""
-24-    body_size = abs(close_p - open_p)
-25-    range_size = high_p - low_p
-26-    if range_size == 0:
-27-        return False
-28-    return (body_size / range_size) < 0.005
 
 ## Required verbatim bodies
 def execute_next_bar_fill(
@@ -1260,12 +1219,6 @@ def detect_engulfing(
 
 ## Phase-5 atomic pack supplements
 
-Docstring count command (AST, so only actual docstring nodes are counted):
-```text
-models/sentiment.py lines=128 docstrings=6
-models/patterns.py lines=198 docstrings=7
-```
-
 Behavioral test names and one-line purposes:
 ```text
 test_sentiment_lexicon_fallback_deterministic — deterministic positive/negative lexicon scores stay in [0,1].
@@ -1287,23 +1240,114 @@ test_gateway_is_only_paper_transmission_path — paper placement is denied/accep
 test_per_strategy_and_asset_loss_buckets_are_denied — strategy and asset loss buckets reject orders.
 ```
 
-Pattern tolerance justification: the independent test derives the threshold as
-`body/range < 0.005`; for a range of 10, body 0.049 is below the boundary and
-body 0.05001 is above it. This is a worked numerical vector with explicit accepted
-and rejected values, not an unexplained widening.
+Pattern tolerance justification: the independent test derives `body/range < 0.005`;
+for range 10, body 0.049 is below and body 0.05001 is above. This is an explicit
+worked numerical vector with accepted and rejected values, not an unexplained widening.
 
 ## Correction ledger
 
-- **CORRECTION: Phase-4 count.** Before: 307. After: pending/invalid until the current
-  commit's fresh full collect-only output; the current evidence pack records 339 collected.
+- **CORRECTION: Phase-4 count.** Before: 307. After: 339 current full collect-only items;
+  CORE_GREEN is 315 and ML_ONLY is 24.
 - **CORRECTION: Phase-6 contradiction.** Before reports: 323 and 311. Current fresh
   reconciliation: CORE_GREEN=315, ML_ONLY=24, TOTAL=339; both environments collect 339.
-  The 323/311 figures are not silently replaced.
 
-## Diff stat command/output
+## Diff stat
 
 ```text
 git diff --stat bf9facac9b69704a140b7e1f08179dcf06c7529b..HEAD
 ```
-(The command is intentionally rerun at the final atomic commit so this line cannot become
-stale.)
+
+## Complete pinned-environment package outputs
+
+### .venv pip freeze
+
+auto-captured at evidence generation:
+beautifulsoup4==4.15.0
+certifi==2026.7.22
+charset-normalizer==3.4.9
+coverage==7.15.2
+frozendict==2.4.7
+html5lib==1.1
+idna==3.18
+iniconfig==2.3.0
+loguru==0.7.3
+lxml==6.1.1
+multitasking==0.0.13
+numpy==2.2.6
+packaging==26.2
+pandas==2.2.3
+peewee==4.2.6
+platformdirs==4.11.0
+pluggy==1.6.0
+pytest==8.3.5
+pytest-cov==6.1.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
+pytz==2026.3.post1
+PyYAML==6.0.3
+requests==2.31.0
+scipy==1.15.3
+six==1.17.0
+soupsieve==2.9.1
+typing_extensions==4.16.0
+tzdata==2025.2
+urllib3==2.7.0
+webencodings==0.5.1
+yfinance==0.2.50
+
+### .venv-ml pip freeze
+
+auto-captured at evidence generation:
+beautifulsoup4==4.15.0
+certifi==2026.7.22
+charset-normalizer==3.4.9
+coverage==7.15.2
+frozendict==2.4.7
+html5lib==1.1
+idna==3.18
+iniconfig==2.3.0
+loguru==0.7.3
+lxml==6.1.1
+multitasking==0.0.13
+numpy==2.2.6
+packaging==26.2
+pandas==2.2.3
+peewee==4.2.6
+platformdirs==4.11.0
+pluggy==1.6.0
+pytest==8.3.5
+pytest-cov==6.1.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
+pytz==2026.3.post1
+PyYAML==6.0.3
+requests==2.31.0
+scipy==1.15.3
+six==1.17.0
+soupsieve==2.9.1
+typing_extensions==4.16.0
+tzdata==2025.2
+urllib3==2.7.0
+webencodings==0.5.1
+yfinance==0.2.50
+
+## No-network test grep
+
+```text
+```
+
+## Diff stat from the inherited base
+
+ config.yaml                            |    8 +-
+ docs/ARCHITECTURE.md                   |    7 +
+ docs/AUDIT_REPORT.md                   |   14 +
+ docs/BUILD_PLAN.md                     |   16 +
+ docs/CONTINUATION_PROMPT.md            |   72 ++
+ docs/EVIDENCE_PROTOCOL.md              |    8 +
+ docs/PHASE7_EVIDENCE.md                | 1309 ++++++++++++++++++++++++++++++++
+ risk/position_limits.py                |  146 ++++
+ tests/unit/test_phase5_models.py       |    6 +-
+ tests/unit/test_phase7_risk_gateway.py |   53 ++
+ trading/core.py                        |   47 +-
+ utils/config.py                        |    6 +
+ 12 files changed, 1680 insertions(+), 12 deletions(-)

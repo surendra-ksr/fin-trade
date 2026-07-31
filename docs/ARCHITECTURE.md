@@ -213,7 +213,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 6 | Full backtesting: walk-forward, Monte Carlo, breaker simulation, reports | planned |
 | 7 | Order-limit gateway, full breaker UI wiring, recovery polish | ✅ done (`risk/position_limits.py` + `RiskGateway` — every order through limits/breakers, breaches → `limit_breach_log`) |
 | 8 | All order types + paper engine (4 modes) + transition checklist | ✅ done (`trading/order_types.py` market/limit/stop/stop-limit/trailing/OCO/bracket with validated state machine + trigger edges; `trading/paper_broker.py` real fills via the shared `backtest.fill_engine.price_fill` core, fees, positions, realized P&L incl. entry fees via `db.close_paper_trade`, idempotency caps — 30s duplicate window + 10 orders/min) |
-| 9 | Automation framework, scheduler routines, watchdog, notifications | planned |
+| 9 | Automation framework, scheduler routines, watchdog, notifications | ✅ done (`automation/scheduler.py` US market-hours scheduler, America/New_York aware, session/phase detection + NYSE holiday/DST edge handling, all time via injected clock; `automation/approval_queue.py` semi_automated TTL queue persisted in DB, full_auto bypass; `automation/recovery.py` post-halt graduated ramp (25/50/75/100% + cooling-off) integrated with breaker state, capping size through the real RiskGateway; `automation/digest.py` daily digest; `automation/reconcile.py` startup reconciliation that halts on position mismatch) |
 | 10 | Broker adapters (Alpaca paper first), reconciler, live monitor | planned |
 | 11 | Streamlit dashboard (12 pages) | planned |
 | 12 | Integration/stress suites, 90-day paper run, docs | planned |
@@ -223,7 +223,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 
 | # | Requirement | Included? | Where |
 |---|---|---|---|
-| 1 | **Automated trading support** — mode that can send real orders from model signals | **Yes (design + config now; execution code lands Phase 8–10)** | `trading.automation_mode` (manual / semi_automated / full_auto / hybrid), `AutomationMode` enum, automation schedule config; pipeline ≥ Step 1–7 defined in §6 |
+| 1 | **Automated trading support** — mode that can send real orders from model signals | **Yes ✅ (design + config + scheduler/approval/recovery now; broker adapters Phase 10)** | `trading.automation_mode` (manual / semi_automated / full_auto / hybrid), `AutomationMode` enum, automation schedule config; Phase 9 `automation/` scheduler (US market-hours, DST-aware), approval queue (semi_automated TTL, full_auto bypass), recovery ramp (graduated, breaker-integrated, caps size through the real RiskGateway), digest, reconciliation; pipeline ≥ Step 1–7 defined in §6 |
 | 2 | **Paper trading support** — virtual balances, same logic as live, no real orders | **Yes ✅ implemented & tested (Phase 8)** | `trading/paper_broker.py` — real fills via shared `backtest.fill_engine.price_fill`, fees, FIFO positions, realized P&L incl. entry fees via `db.close_paper_trade`, idempotency caps (30s duplicate window, 10 orders/min); `paper_trades` + `performance_metrics` tables ✅; gateway-gated placement §6 |
 | 3 | **Position & exposure limits** — per-asset, per-strategy, portfolio; configurable; enforced pre-trade with logged rejections | **Yes ✅ implemented & tested (Phase 7)** | `risk/position_limits.py` `RiskGateway` enforced on every order before transmission; `limit_breach_log` ✅, `order_limits.{per_order,per_stock,per_day,per_portfolio}` ✅, `max_position_size_pct`, sector concentration, leverage, correlation caps |
 | 4 | **Speed breaker loss limits** — daily, weekly, monthly, per-strategy, per-asset, drawdown | **Yes (daily/weekly/monthly/drawdown ✅ implemented & tested; per-strategy/per-asset hooks shipped as metadata hooks: strategy-level limits are enforced via `limit_*` config + `limit_breach_log`, allocated to Phase 8 gateway with per-strategy buckets already in the paper_trades schema)** | `risk/circuit_breakers.py` Layers 2–5 ✅, `circuit_breakers.*` config ladders ✅, `paper_trades.strategy` column ✅ |
@@ -276,3 +276,48 @@ partial-close fee/slippage balances proportional). Submission is idempotent: the
 duplicate window and 10 orders/min cap both reject with explicit reasons. Placement is
 gateway-only: `RiskGateway.transmit` remains the sole caller of the low-level `submit` (grep
 proof in the Phase-8 evidence pack).
+
+## Phase 9 automation implementation note (2026-07-31)
+
+The automation layer is now real (no longer a one-shot stub). Five modules live under
+`automation/`, all driven by an **injected clock** (`now_fn`) with zero wall-clock in their
+detection/transition logic and in the Phase-9 tests.
+
+`automation/scheduler.py` is a US market-hours scheduler, `America/New_York` aware.
+`session_phase` classifies an aware-UTC instant into `PRE_MARKET / REGULAR / POST_MARKET /
+CLOSED` using the `automation.*` schedule and the NYSE weekend + holiday calendar
+(`utils.helpers`). DST is resolved by the OS zoneinfo database: `local_wallclock_to_utc`
+maps the same 09:30 to 14:30 UTC in US Eastern Standard Time and 13:30 UTC in Daylight
+Time (proven by the spring-forward/fall-back Sunday edge tests).
+`MarketScheduler.execution_allowed` honors `trading.trading_hours` (market_only/extended/24h)
+and `entries_allowed` honors the `automation.stop_new_entries` intraday guard. Job
+execution is gated by phase + interval and `last_run` timestamps persist in `system_state`
+so the schedule survives a restart.
+
+`automation/approval_queue.py` implements the semi_automated approval queue. Signals enqueue
+PENDING with a TTL; `expire_due` drops stale entries so they are never executed. `bypass()`
+returns True for `full_auto` (and high-confidence `hybrid`); every other mode queues. The
+lifecycle is gated by the authoritative `_ALLOWED` transition table — `_transition` raises
+`ApprovalError` on illegal moves (e.g. an EXECUTED signal cannot be re-approved). The whole
+queue snapshots to `system_state` (plus an `automation_log` row per transition) so it
+survives a restart.
+
+`automation/recovery.py` is the post-halt graduated size ramp, exactly per `recovery.*`
+config: day1-3 25%, day4-7 50%, week2 75%, week3+ 100%, with a `cooling_off_days` pause.
+`ramp_multiplier` is the pure ramp-calculation function. It integrates with the
+circuit-breaker state restore: `mark_halted` freezes the ramp (the elapsed-days clock
+stops), `resume` (human-approved) restarts it at day 0, and `observe_breaker` auto-latches
+a halt from the live `CircuitBreakerManager`. `size_order` is the single quantity-sizing
+authority for the automation path and caps an intended quantity through the **real**
+`RiskGateway` — the Phase-9 integration test proves a 100-share intent fills only 25 on
+day 1 via `RiskGateway.transmit -> PaperBroker.submit`, with no parallel limit logic.
+
+`automation/digest.py` builds a `DailyDigest` (positions, realized P&L, daily return/
+drawdown, breaker events, limit breaches) aggregated from the audit tables, with a
+plain-text renderer for operator notifications. `automation/reconcile.py` reconciles DB
+`paper_trades` net positions against broker-reported positions on startup; any divergence
+(db_only / broker_only / quantity mismatch) is logged to `automation_log` and escalated to
+the breaker as a sticky `POSITION_MISMATCH` that halts new entries per policy until a human
+clears it. The recovery ramp and approval queue never weaken a breaker threshold — they only
+gate *when* and *at what size* work may run; all risk enforcement still belongs to the
+`RiskGateway` and the circuit breakers.

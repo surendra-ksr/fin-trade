@@ -854,6 +854,54 @@ class DatabaseManager:
         )
         return int(cursor.lastrowid)
 
+    def split_paper_trade(self, trade_id: int, close_quantity: float) -> Optional[int]:
+        """Carve a ``close_quantity`` slice out of an OPEN paper trade.
+
+        The original row keeps the remaining quantity and a proportionally
+        reduced fee/slippage balance; a NEW open row is inserted for the
+        slice with the same entry reference and its proportional share of
+        entry fees/slippage. Returns the new row's id, or None when the
+        trade is not open or ``close_quantity`` is not a strict partial
+        (callers use ``close_paper_trade`` for full closes).
+
+        This keeps every ``paper_trades`` row's fee/slippage balance
+        consistent so ``close_paper_trade`` computes realized P&L that
+        includes the correct proportional entry costs for partial closes.
+        """
+        row = self.query_one(
+            "SELECT portfolio_id, symbol, side, quantity, entry_time, entry_price, status, "
+            "fees, slippage_cost, strategy, signal_id, meta "
+            "FROM paper_trades WHERE id = ?",
+            (trade_id,))
+        if row is None or row["status"] != "OPEN":
+            return None
+        remaining = float(row["quantity"])
+        if not (0.0 < float(close_quantity) < remaining):
+            return None
+        share = float(close_quantity) / remaining
+        slice_fee = float(row["fees"]) * share
+        slice_slip = float(row["slippage_cost"]) * share
+        now = to_iso_z(pd.Timestamp.utcnow())
+        # Shrink the original row (fees/slippage stay proportional to qty).
+        self.execute(
+            "UPDATE paper_trades SET quantity = ?, fees = ?, slippage_cost = ?, "
+            "updated_at = ? WHERE id = ?",
+            (remaining - float(close_quantity), float(row["fees"]) - slice_fee,
+             float(row["slippage_cost"]) - slice_slip, now, trade_id),
+        )
+        # Insert the slice as its own open row with proportional costs.
+        cursor = self.execute(
+            "INSERT INTO paper_trades "
+            "(portfolio_id, symbol, side, quantity, entry_time, entry_price, status, "
+            " fees, slippage_cost, strategy, signal_id, meta, inserted_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?)",
+            (row["portfolio_id"], row["symbol"], row["side"],
+             float(close_quantity), row["entry_time"], row["entry_price"],
+             slice_fee, slice_slip, row["strategy"], row["signal_id"], row["meta"],
+             now, now),
+        )
+        return int(cursor.lastrowid)
+
     def close_paper_trade(
         self,
         trade_id: int,

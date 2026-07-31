@@ -1,0 +1,10 @@
+# ML requirements — Python 3.11, validated 2026-07-31.
+# Clean install: python3.11 -m venv .venv-ml && .venv-ml/bin/pip install -r requirements-ml.txt
+# Torch-first; TensorFlow intentionally excluded to avoid backend conflicts.
+torch==2.6.0
+scikit-learn==1.7.2
+optuna==4.5.0
+shap==0.51.0
+transformers==4.48.3
+stable-baselines3==2.6.0
+gymnasium==1.1.1

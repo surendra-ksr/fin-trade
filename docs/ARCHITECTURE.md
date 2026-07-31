@@ -180,6 +180,8 @@ Run: `python3 -m pytest tests/unit -q`
 
 ## 8. Implementation Roadmap (spec Part 18)
 
+The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.md).
+
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Foundation: structure, config, logging, DB, data agent, circuit breakers | ✅ done |
@@ -213,3 +215,18 @@ mechanics end-to-end; items 1–3 are fully specified in config/schema/design
 with their gateways and audit logging already in place, and the remaining
 execution/UI surfaces are scheduled in the roadmap phases above with no
 design changes required to get there.
+
+### Dependency tiers
+
+The mandatory Python 3.11 core is `requirements.txt`; ML dependencies are isolated in
+`requirements-ml.txt`; broker/dashboard integrations are isolated in `requirements-optional.txt`.
+TensorFlow is intentionally not a core dependency.
+
+**Phase 2 update:** canonical feature code is now under `features/`; `data/features.py` is a
+compatibility re-export shim. `features/feature_engineer.py` uses backward-only joins for
+multi-timeframe and intermarket data. Phase 2 provider APIs are credential-gated and injectable.
+The roadmap remains open until mocked provider tests and the remaining quality edge-case tests
+are added.
+
+Phase 2 implementation now includes separated causal indicator functions, multi-timeframe
+backward joins, mocked provider boundaries, and stale/gap/corporate-jump quality checks.

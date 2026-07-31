@@ -75,9 +75,9 @@ class PositionLimits:
         return None
 
     def check_strategy(self, order: OrderRequest, p: PortfolioSnapshot) -> Optional[str]:
-        threshold = self.config.risk.max_portfolio_risk_pct
+        threshold = self.config.risk.per_strategy_max_gross_pct
         value = sum(abs(x.value) for x in self._projected(order, p) if x.strategy == order.strategy)
-        if value / p.equity > threshold * 5: return f"strategy_gross>{threshold * 5}"
+        if value / p.equity > threshold: return f"strategy_gross>{threshold}"
         return None
 
     def check_sector(self, order: OrderRequest, p: PortfolioSnapshot) -> Optional[str]:

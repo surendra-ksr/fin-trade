@@ -143,6 +143,7 @@ class RiskConfig:
     per_strategy_daily_loss_limit_pct: float = 0.02
     per_strategy_weekly_loss_limit_pct: float = 0.05
     per_strategy_monthly_loss_limit_pct: float = 0.08
+    per_strategy_max_gross_pct: float = 0.10
     per_asset_daily_loss_limit_pct: float = 0.02
     per_asset_weekly_loss_limit_pct: float = 0.05
     per_asset_monthly_loss_limit_pct: float = 0.08

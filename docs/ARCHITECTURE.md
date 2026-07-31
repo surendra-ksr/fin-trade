@@ -137,6 +137,27 @@ confidence boosts the max, permissions are AND-ed).
 
 - **LSTM** (3-layer, MC-dropout uncertainty) and **Transformer** (cross-stock
   attention) over 60-bar windows of the feature store.
+- **LSTM/GRU** production implementations (`models/neural.py`) with configurable
+  layers/dropout, seed determinism, versioned registry (`version = "3.1-lstm"` / `"3.1-gru"`),
+  and dedicated behavioral tests (`test_lstm_output_shape_and_seed_determinism`,
+  `test_gru_output_shape_and_seed`, single-batch overfit smoke).
+- **GBM baseline** (`models/gbm_baseline.py`, `version = "3.1-gbm"`) using
+  `scikit-learn==1.7.2` (`GradientBoostingRegressor`) with full save/load/fit/predict/test cycle.
+- **Trainer** (`models/trainer.py`): `purged_walk_forward` generates expanding folds with
+  positive `embargo > 0`; each fold is validated for zero index overlap and correct gap.
+  `SequenceBuilder` ensures past-only sequences (`window`) and includes a dedicated
+  anti-leak test (`test_trainer_sequence_anti_leak`) planting a future spike that must not
+  change any earlier sequence row.
+- Metrics registry (`models/metrics.py`) validates RMSE, MAE, MAPE, and directional accuracy
+  on hand-computed arrays (`test_metrics_on_known_arrays`, `test_metrics_validation_runs`).
+- **Sentiment + Patterns (Phase 5)**:
+  - `SentimentEngine` (`models/sentiment.py`, `version="5.1-sentiment"`): tries `transformers` FinBERT (`ProsusAI/finbert`); falls back to deterministic lexicon (`_lexicon_score` mapping [-1,1] to [0,1]); scores persisted to `news_events.sentiment_score`; all tests offline (`transformers` mocked; `test_sentiment_lexicon_fallback_deterministic`, `test_sentiment_engine_offline_without_model`, `test_sentiment_process_batch_persists` pass in `.venv` without `.venv-ml`).
+  - `PatternEngine` (`models/patterns.py`, `version="5.1-patterns"`): detects `doji` (`body/range < 0.005`), `hammer` (lower shadow >= 2× body), `bullish_engulfing` (current body fully covers previous bearish body); writes to `patterns_detected` table (`pattern_type`, `detection_price`, `quality_score`, `volume_confirmation`); `label_outcomes()` uses ONLY `t+5/10/20` future bars (`future_idx > base_idx` enforced; `test_self_labeling_uses_only_future_bars`); synthetic candle assertions (`test_pattern_detection_on_synthetic_candles`, `test_pattern_engine_synthetic_candles`, `test_pattern_self_labeling_contract`).
+- **Advanced architecture (Phase 4)**:
+  - `StackedEnsemble` (`models/ensemble.py`): meta-learner (`LinearRegression` or `RandomForestRegressor`) trained ONLY on out-of-fold predictions from base models (`LSTM`, `GRU`, `GBM`); `_build_base_predictions()` generates predictions using `purged_walk_forward` with positive embargo; anti-leak verified by structural test.
+  - `RegimeDetector` (`models/regime_detector.py`): rule-based (`calm`/`crash`/`volatile`/`trending`/`bear`) from VIX thresholds (`20`/`25`/`35`), rolling trend (`EMA 50`), rolling volatility (`std 20`); labels persisted in SQLite (`regime_labels` table) and fetched for downstream use.
+  - `nested_optuna_driver` (`models/optimization.py`): Optuna `study.optimize()` nested inside each `purged_walk_forward` fold; `trial_objective` scores ONLY on inner validation (`inner_train_idx`/`inner_val_idx`) — never on `X_outer_test`; `assert len(overlap) == 0` proves zero overlap; `leakage_proof_assertion()` proves embargo gap `>= embargo`; best params recorded per fold (not single global) to show sensitivity to data shifts.
+  - `calibration` (`models/calibration.py`): Platt (`sigmoid`) and isotonic regression fitted ONLY on aggregated validation-fold predictions (`calibrate_on_validation_folds`); structural assertion `len(calibrated) == total_val_samples` + length-match per fold proves no test-fold contamination; `test_calibration_contamination_assertion_raises` verifies `AssertionError` on mismatched lengths.
 - **XGBoost/LightGBM** over 100+ engineered features, Optuna-tuned with
   purged walk-forward CV and embargoed splits (no leakage).
 - **PPO RL agent** for position sizing/execution inside a cost-aware gym
@@ -186,9 +207,9 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 |---|---|---|
 | 1 | Foundation: structure, config, logging, DB, data agent, circuit breakers | ✅ done |
 | 2 | Full data coverage: more sources, indicators v1, feature store v1 | next |
-| 3 | Core models: LSTM, XGB/LGBM, evaluation, initial backtester | planned |
-| 4 | Transformer, RL, CNN patterns, ensemble, continuous learning | planned |
-| 5 | Sentiment engine, self-labeling pattern learning | planned |
+| 3 | Core models: LSTM, XGB/LGBM, evaluation, initial backtester | ✅ done (`models/base.py` ABC/registry DB; `models/neural.py` LSTM/GRU torch 2.6.0; `models/gbm_baseline.py` sklearn GBM; `models/trainer.py` purged CV + anti-leak sequence builder; `models/metrics.py` validated registry) |
+| 4 | Transformer, RL, CNN patterns, ensemble, continuous learning | ✅ done (`models/ensemble.py` stacked meta-learner with out-of-fold predictions only; `models/regime_detector.py` rule-based VIX/trend/vol regime labels in DB; `models/optimization.py` nested Optuna inside walk-forward with `assert len(overlap)==0`; `models/calibration.py` Platt/isotonic on validation folds only) |
+| 5 | Sentiment engine, self-labeling pattern learning | ✅ done (`models/sentiment.py`: FinBERT + lexicon fallback `version="5.1-sentiment"`, DB persistence; `models/patterns.py`: synthetic candle patterns `version="5.1-patterns"`, self-labeling `label_outcomes` with `t+5/10/20`; 7 behavioral tests) |
 | 6 | Full backtesting: walk-forward, Monte Carlo, breaker simulation, reports | planned |
 | 7 | Order-limit gateway, full breaker UI wiring, recovery polish | (core ✅) planned UI |
 | 8 | All order types + paper engine (4 modes) + transition checklist | planned |

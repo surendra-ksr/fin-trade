@@ -81,7 +81,7 @@ def test_regime_detector_fetch_regimes():
 # Nested Optuna — leakage-proof assertion test (pasted body)
 # ------------------------------------------------------------------
 
-def test_nested_optuna_driver_body_pasted():
+def test_nested_optuna_leakage_proof_and_embargo_assertion():
     """Paste the nested walk-forward + Optuna driver function body and
     verify the purge/embargo assertion.
     

@@ -90,10 +90,20 @@ jobs:
       - run: python -m pip install --upgrade pip && pip install -r requirements.txt
       - name: Core tests and risk/trading coverage gate
         run: >-
-          pytest tests/unit -q
-          --ignore=tests/unit/test_phase3_models.py
-          --ignore=tests/unit/test_phase4_models.py
-          --ignore=tests/unit/test_phase11_dashboard_boot.py
+          pytest tests -q
+          --deselect=tests/unit/test_phase11_dashboard_boot.py::test_dashboard_headless_boot_smoke
+          --deselect=tests/unit/test_phase3_models.py::test_model_registry_roundtrip
+          --deselect=tests/unit/test_phase3_models.py::test_lstm_output_shape_and_seed_determinism
+          --deselect=tests/unit/test_phase3_models.py::test_gru_output_shape_and_seed
+          --deselect=tests/unit/test_phase3_models.py::test_lstm_single_batch_overfit_smoke
+          --deselect=tests/unit/test_phase3_models.py::test_gru_single_batch_overfit_smoke
+          --deselect=tests/unit/test_phase3_models.py::test_gbm_fit_predict_save_load_roundtrip
+          --deselect=tests/unit/test_phase4_models.py::test_ensemble_meta_trained_only_on_out_of_fold_predictions
+          --deselect=tests/unit/test_phase4_models.py::test_ensemble_predict_shape_after_fit
+          --deselect=tests/unit/test_phase4_models.py::test_nested_optuna_leakage_proof_and_embargo_assertion
+          --deselect=tests/unit/test_phase4_models.py::test_optuna_best_params_differ_per_fold_when_data_shifts
+          --deselect=tests/unit/test_phase4_models.py::test_calibration_fitted_only_on_validation_folds
+          --deselect=tests/unit/test_phase4_models.py::test_platt_scale_and_isotonic_output_range
           --cov=risk --cov=trading --cov-report=xml:coverage.xml --cov-fail-under=85
       - uses: actions/upload-artifact@v4
         if: always()

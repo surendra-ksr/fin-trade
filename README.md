@@ -91,3 +91,10 @@ docs/       ARCHITECTURE.md (design + roadmap + self-check)
 config.yaml master configuration   ·   .env.example secrets template
 requirements.txt pinned deps, phase-tagged   ·   pytest.ini · conftest.py
 ```
+
+## Dependency tiers
+
+Core Phases 1–2 dependencies are pinned in `requirements.txt` and are validated on
+Python 3.11. Phase 3–5 ML dependencies are isolated in `requirements-ml.txt` (Torch-first;
+TensorFlow is intentionally excluded). Dashboard and broker integrations are in
+`requirements-optional.txt` and should only be installed for their phase.

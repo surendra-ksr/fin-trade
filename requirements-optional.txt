@@ -1,0 +1,7 @@
+# Optional integrations — Python 3.11, validated 2026-07-31.
+# Install only for the relevant phase: pip install -r requirements-optional.txt
+streamlit==1.42.0
+plotly==6.0.1
+alpaca-py==0.43.5
+# polygon-api-client is optional and provider-protocol compatible; install separately
+# when its upstream dependency set is compatible with the deployment environment.

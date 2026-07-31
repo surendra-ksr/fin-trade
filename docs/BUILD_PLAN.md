@@ -17,3 +17,10 @@ This is the plan of record. Every phase requires real implementation, behavioral
 13. **Optimization:** profiling-led vectorization, feature caching, DB hot-query indices, benchmark and documented results.
 
 Acceptance details are defined by the authoritative phase map in the build request and must not be weakened. The architecture roadmap links here.
+
+## Dependency policy
+
+`requirements.txt` is the mandatory Python 3.11 core for Phases 1–2. `requirements-ml.txt`
+is isolated to Phases 3–5 and uses Torch-first dependencies. `requirements-optional.txt`
+contains Phase 10/11 integrations. TensorFlow is excluded unless a later phase demonstrates
+a concrete need.

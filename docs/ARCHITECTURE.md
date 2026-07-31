@@ -215,3 +215,9 @@ mechanics end-to-end; items 1–3 are fully specified in config/schema/design
 with their gateways and audit logging already in place, and the remaining
 execution/UI surfaces are scheduled in the roadmap phases above with no
 design changes required to get there.
+
+### Dependency tiers
+
+The mandatory Python 3.11 core is `requirements.txt`; ML dependencies are isolated in
+`requirements-ml.txt`; broker/dashboard integrations are isolated in `requirements-optional.txt`.
+TensorFlow is intentionally not a core dependency.

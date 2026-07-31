@@ -163,3 +163,8 @@ checks per-asset, per-strategy, per-sector, portfolio gross/net, configured dail
 drawdown buckets, and breaker-state entry blocks. Denials are written to `limit_breach_log`
 when a database is supplied. `PaperBroker.place_order` calls `RiskGateway.transmit`; grep
 proof and verbatim function bodies belong in the atomic Phase-7 evidence pack.
+
+**CORRECTION (authoritative current pack):** the pending after-value above is now resolved:
+**before: 307; after: 339 full collect-only items** (`CORE_GREEN=315 + ML_ONLY=24`).
+The Phase-6 before values remain explicitly recorded as **323 vs 311**; the fresh current
+value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environments.

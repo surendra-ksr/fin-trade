@@ -1351,3 +1351,13 @@ yfinance==0.2.50
  trading/core.py                        |   47 +-
  utils/config.py                        |    6 +
  12 files changed, 1680 insertions(+), 12 deletions(-)
+
+## Final committed-state closure
+
+The root `CONTINUATION_PROMPT.md` deletion was committed and pushed separately so no session
+artifact remains at repository root. Final pre-documentation-commit state:
+```text
+feac41a Remove root continuation session artifact
+git status --short: empty
+```
+PR: https://github.com/surendra-ksr/fin-trade/pull/4

@@ -221,3 +221,9 @@ design changes required to get there.
 The mandatory Python 3.11 core is `requirements.txt`; ML dependencies are isolated in
 `requirements-ml.txt`; broker/dashboard integrations are isolated in `requirements-optional.txt`.
 TensorFlow is intentionally not a core dependency.
+
+**Phase 2 update:** canonical feature code is now under `features/`; `data/features.py` is a
+compatibility re-export shim. `features/feature_engineer.py` uses backward-only joins for
+multi-timeframe and intermarket data. Phase 2 provider APIs are credential-gated and injectable.
+The roadmap remains open until mocked provider tests and the remaining quality edge-case tests
+are added.

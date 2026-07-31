@@ -24,3 +24,12 @@ Acceptance details are defined by the authoritative phase map in the build reque
 is isolated to Phases 3–5 and uses Torch-first dependencies. `requirements-optional.txt`
 contains Phase 10/11 integrations. TensorFlow is excluded unless a later phase demonstrates
 a concrete need.
+
+## Phase 2 status (2026-07-31)
+
+- [x] Canonical pure pandas/NumPy indicator module and causal feature engineering
+- [x] Behavioral indicator vectors and edge-case tests
+- [x] Multi-timeframe backward-only joins
+- [x] Quality module and compatibility shim consolidation
+- [x] Credential-gated Alpha Vantage, SEC facts, options surface, and news ingestion APIs
+- [ ] Provider-extension mocked HTTP tests and full production-grade data-quality gap/stale/action tests (follow-up required before final phase closure)

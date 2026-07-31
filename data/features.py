@@ -12,7 +12,7 @@ def _ohlc(frame):
     return frame.rename(columns={c.lower(): c.lower() for c in frame.columns})
 
 
-def add_indicators(frame: pd.DataFrame, periods=(5, 10, 20, 50, 100, 200)) -> pd.DataFrame:
+def add_indicators(frame: pd.DataFrame, periods=(3, 5, 8, 10, 14, 20, 30, 50, 75, 100, 150, 200)) -> pd.DataFrame:
     """Return OHLCV plus a broad, stable indicator suite (100+ columns)."""
     if frame.empty: return frame.copy()
     x = _ohlc(frame.copy()); close=x['close'].astype(float); high=x['high'].astype(float); low=x['low'].astype(float)

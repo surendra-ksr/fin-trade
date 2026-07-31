@@ -29,6 +29,13 @@ class OrderRequest:
     order_type: str = "market"
     confidence: float = 1.0
     client_id: str = ""
+    # Phase-8 order-type payload: triggers, trailing distance, and OCO/bracket
+    # container linkage. Defaults keep every Phase-7 construction valid.
+    limit_price: Optional[float] = None
+    stop_price: Optional[float] = None
+    trail_pct: Optional[float] = None
+    oco_group: Optional[str] = None
+    parent_id: Optional[str] = None
 
 @dataclass
 class PortfolioSnapshot:

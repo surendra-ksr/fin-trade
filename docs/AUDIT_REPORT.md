@@ -41,7 +41,7 @@ the backtest returned finite metrics. No network was used.
 | Phase 5 sentiment/patterns | §5 Phase 5 | sentiment, candlestick/chart patterns and outcome writes | Absent as a working subsystem | ❌ | source inspection |
 | Phase 6 backtesting | §5 Phase 6 | next-bar fills, walk-forward, reports and anti-lookahead test | `backtest/engine.py` is a minimal vectorized helper; it does not model next-bar fills, orders, reports or walk-forward | ❌ | live import/smoke and source inspection |
 | Phase 7 gateway | §5 Phase 7 | all orders through limits/risk gateway and breach logging | No `RiskGateway` or `risk/position_limits.py`; `PaperBroker` accepts orders directly | ❌ | source inspection |
-| Phase 8 trading | §5 Phase 8 | order types, fills, positions, fees, idempotency caps | `trading/core.py` only records accepted orders; no fills/P&L/limits | ❌ | live paper broker smoke |
+| Phase 8 trading | §5 Phase 8 | order types, fills, positions, fees, idempotency caps | `trading/order_types.py` (7 order types + validated state machine + trigger edges) and `trading/paper_broker.py` (real fills via the shared `price_fill` core, fees, FIFO positions, realized P&L incl. entry fees, 30s duplicate window + 10 orders/min caps) | ✅ | 54 behavioral tests (`test_phase8_order_types.py` 29, `test_phase8_paper_broker.py` 25) |
 | Phase 9 automation | §5 Phase 9 | market guards, approval queue, recovery, reconciliation | Scheduler only runs enabled callbacks once | ❌ | source inspection |
 | Phase 10 brokers | §5 Phase 10 | ABC, retry/timeout, Alpaca gate, kill-switch wiring | Protocol is not the required adapter/gateway implementation | ❌ | source inspection |
 | Phase 11 dashboard | §5 Phase 11 | offline Streamlit pages | Package marker only; no app/pages | ❌ | `find dashboard` |
@@ -168,3 +168,42 @@ proof and verbatim function bodies belong in the atomic Phase-7 evidence pack.
 **before: 307; after: 339 full collect-only items** (`CORE_GREEN=315 + ML_ONLY=24`).
 The Phase-6 before values remain explicitly recorded as **323 vs 311**; the fresh current
 value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environments.
+
+## Phase 8 audit entry (2026-07-31, fresh evidence pack — PR "Phase 8: order types & paper trading")
+
+- `trading/order_types.py` (see evidence stats): `OrderType` (market/limit/stop/stop_limit/
+  trailing_stop/oco/bracket) and the 8-state machine (`PENDING_NEW → SUBMITTED → TRIGGERED →
+  WORKING → FILLED/CANCELLED/REJECTED/EXPIRED`) with the authoritative `STATE_MACHINE` table;
+  `transition()` raises `InvalidTransitionError` on illegal moves and terminal states accept no
+  transitions (`test_every_state_has_transitions_entry`, `test_terminal_states_accept_no_transitions`).
+- Trigger edges (pure `evaluate_trigger`, verbatim body in the evidence pack): gap-through stops
+  execute at the bar OPEN (`test_stop_gap_through_buy_executes_at_open`/sell), trailing stops
+  ratchet one direction only and never reverse (`test_trailing_sell_ratchets_up_and_never_back`,
+  `test_trailing_buy_ratchets_down_and_never_back`), OCO one-cancels-other on fill
+  (`test_oco_one_cancels_other_on_fill`, broker-level `test_oco_same_bar_cross_fills_only_first_leg`),
+  bracket children arm only after entry fill and the twin cancels (`test_bracket_children_arm_only_after_entry_fill`,
+  `test_bracket_child_fill_cancels_twin`).
+- `backtest/fill_engine.py` consolidation: `price_fill()` is the single shared fill-pricing path;
+  `execute_next_bar_fill` delegates to it, and the paper broker imports the SAME function
+  (`test_fills_reuse_the_single_shared_pricing_core` — identity assertion). No divergent duplicate.
+- `trading/paper_broker.py` (verbatim `submit`, `_idempotency_check`, `_fill_order`, `_close_lot`
+  bodies in the evidence pack): market/limit/stop/trailing fills through the shared core with
+  config-derived fees (`backtesting.commission`→bps) and slippage; FIFO position ledger; realized
+  P&L INCLUDING entry fees via `db.close_paper_trade` (`test_realized_pnl_long_includes_entry_and_exit_fees`
+  → 10×5−1.00−1.05=47.95, short → 48.05) with `db.split_paper_trade` for proportional partial-close
+  costs (`test_partial_close_allocates_entry_fees_proportionally` → 39.16); duplicate window and
+  10/min caps both fire (`test_duplicate_order_window_blocks_resubmission`,
+  `test_order_rate_cap_10_per_minute_fires`) and are rolling (`test_duplicate_window_expiry_allows_resubmission`,
+  `test_order_rate_cap_is_a_rolling_window`).
+- Gateway regression: low-level `submit` reachable ONLY via `RiskGateway.transmit` —
+  `test_gateway_denial_blocks_low_level_submit` (spy: `submit_calls == 0` on gateway denial),
+  `test_place_order_routes_through_gateway_transmit`, plus the source grep proof in
+  `docs/PHASE8_EVIDENCE.md`.
+- Reconciliation: TOTAL = CORE_GREEN(369) + ML_ONLY(24) = 393; collect-only proof in the Phase-8
+  evidence pack for both environments; 2× green runs each (different durations = fresh).
+- No logic weakened; no safety thresholds bypassed; no history rewritten; all commits pushed;
+  working tree clean (`git status --short` empty) before evidence reporting; PR open
+  ("Phase 8: order types & paper trading"); Phase 9 (automation) next per `BUILD_PLAN.md`.
+- Phase 8 verdict: order types, realistic fills (one shared pricing path), fees, position
+  tracking, realized P&L including entry fees, idempotency caps (30s + 10/min) fully implemented
+  with behavioral tests. Phase 8 gate satisfied.

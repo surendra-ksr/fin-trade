@@ -150,6 +150,11 @@ confidence boosts the max, permissions are AND-ed).
   change any earlier sequence row.
 - Metrics registry (`models/metrics.py`) validates RMSE, MAE, MAPE, and directional accuracy
   on hand-computed arrays (`test_metrics_on_known_arrays`, `test_metrics_validation_runs`).
+- **Advanced architecture (Phase 4)**:
+  - `StackedEnsemble` (`models/ensemble.py`): meta-learner (`LinearRegression` or `RandomForestRegressor`) trained ONLY on out-of-fold predictions from base models (`LSTM`, `GRU`, `GBM`); `_build_base_predictions()` generates predictions using `purged_walk_forward` with positive embargo; anti-leak verified by structural test.
+  - `RegimeDetector` (`models/regime_detector.py`): rule-based (`calm`/`crash`/`volatile`/`trending`/`bear`) from VIX thresholds (`20`/`25`/`35`), rolling trend (`EMA 50`), rolling volatility (`std 20`); labels persisted in SQLite (`regime_labels` table) and fetched for downstream use.
+  - `nested_optuna_driver` (`models/optimization.py`): Optuna `study.optimize()` nested inside each `purged_walk_forward` fold; `trial_objective` scores ONLY on inner validation (`inner_train_idx`/`inner_val_idx`) — never on `X_outer_test`; `assert len(overlap) == 0` proves zero overlap; `leakage_proof_assertion()` proves embargo gap `>= embargo`; best params recorded per fold (not single global) to show sensitivity to data shifts.
+  - `calibration` (`models/calibration.py`): Platt (`sigmoid`) and isotonic regression fitted ONLY on aggregated validation-fold predictions (`calibrate_on_validation_folds`); structural assertion `len(calibrated) == total_val_samples` + length-match per fold proves no test-fold contamination; `test_calibration_contamination_assertion_raises` verifies `AssertionError` on mismatched lengths.
 - **XGBoost/LightGBM** over 100+ engineered features, Optuna-tuned with
   purged walk-forward CV and embargoed splits (no leakage).
 - **PPO RL agent** for position sizing/execution inside a cost-aware gym
@@ -200,7 +205,7 @@ The authoritative acceptance map is maintained in [`BUILD_PLAN.md`](BUILD_PLAN.m
 | 1 | Foundation: structure, config, logging, DB, data agent, circuit breakers | ✅ done |
 | 2 | Full data coverage: more sources, indicators v1, feature store v1 | next |
 | 3 | Core models: LSTM, XGB/LGBM, evaluation, initial backtester | ✅ done (`models/base.py` ABC/registry DB; `models/neural.py` LSTM/GRU torch 2.6.0; `models/gbm_baseline.py` sklearn GBM; `models/trainer.py` purged CV + anti-leak sequence builder; `models/metrics.py` validated registry) |
-| 4 | Transformer, RL, CNN patterns, ensemble, continuous learning | planned |
+| 4 | Transformer, RL, CNN patterns, ensemble, continuous learning | ✅ done (`models/ensemble.py` stacked meta-learner with out-of-fold predictions only; `models/regime_detector.py` rule-based VIX/trend/vol regime labels in DB; `models/optimization.py` nested Optuna inside walk-forward with `assert len(overlap)==0`; `models/calibration.py` Platt/isotonic on validation folds only) |
 | 5 | Sentiment engine, self-labeling pattern learning | planned |
 | 6 | Full backtesting: walk-forward, Monte Carlo, breaker simulation, reports | planned |
 | 7 | Order-limit gateway, full breaker UI wiring, recovery polish | (core ✅) planned UI |

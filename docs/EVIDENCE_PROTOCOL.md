@@ -1,5 +1,13 @@
 # Evidence Protocol
 
+## Permanent relay rules
+
+- Every relay includes `TOTAL = CORE + ML_ONLY` and the equality is proven by complete,
+  per-environment collect-only output. Self-contradicting counts automatically fail.
+- Any change to a previously reported number is labeled `CORRECTION:` with before and
+  after values. Silent edits are fabrication.
+- Continuation/session artifacts belong under `docs/` (never the repository root).
+
 ## Atomic Evidence Pack
 
 Before any report, all work MUST be committed and pushed to the session branch. The

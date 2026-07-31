@@ -98,7 +98,13 @@ risk:
   min_avg_volume: 500000            # minimum avg daily share volume (liquidity)
   min_stock_price: 5.0              # avoid penny stocks
   time_stop_days: 10                # exit positions with no progress
-  max_loss_per_trade_pct: 0.02      # absolute hard cap per trade
+  max_loss_per_trade_pct: 0.02       # absolute hard cap per trade
+  per_strategy_daily_loss_limit_pct: 0.02
+  per_strategy_weekly_loss_limit_pct: 0.05
+  per_strategy_monthly_loss_limit_pct: 0.08
+  per_asset_daily_loss_limit_pct: 0.02
+  per_asset_weekly_loss_limit_pct: 0.05
+  per_asset_monthly_loss_limit_pct: 0.08
 
 # -----------------------------------------------------------------------------
 # CIRCUIT BREAKERS & SPEED BREAKERS  (Part 9 of the spec)

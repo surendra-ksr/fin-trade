@@ -81,3 +81,19 @@ a concrete need.
 - [x] `.venv` (core): 323 passed (excl Phase 3 ML 15 + Phase 4 ML 9); `.venv-ml`: 335 passed (`23.25s`); `tests/unit/test_backtest_engine.py`: 6 tests; module stats: `fill_engine.py` (89 lines / 8 docstrings), `order_engine.py` (68 / 7), `reports.py` (51 / 5), `engine.py` (updated, 27 lines / 4 docstrings); `tests/unit/test_backtest_engine.py` (6 tests)
 - [x] Reconciliation: TOTAL = CORE_GREEN(311) + ML_ONLY_Phase3(15) + ML_ONLY_Phase4(9) = 335; `.venv` collect=335; `.venv-ml` collect=335; `.venv` run=311; `.venv-ml` run=335; both fresh (`21.09s` / `23.25s`)
 - [x] No logic weakened; no safety thresholds bypassed; no history rewritten; all commits pushed; working tree clean; PR open (`https://github.com/surendra-ksr/fin-trade/pull/3` updated to `Phase 5: sentiment & patterns`); no permission asked; Phase 7 (risk gateway polish) next per `BUILD_PLAN.md`
+
+## Verification debt and correction (2026-07-31)
+
+**CORRECTION:** the previously reported Phase-6 core count was **311** in one relay and
+**323** in another. Neither number is accepted until the fresh date-stamped, per-environment
+collect-only and run outputs are captured from this commit. The authoritative reconciliation
+will be recorded as `TOTAL = CORE + ML_ONLY` with the complete outputs, not inferred from a
+summary.
+
+## Phase 7 status (2026-07-31 — implementation)
+
+- [x] `risk/position_limits.py`: config-driven per-asset, per-strategy, per-sector, and portfolio gross/net checks.
+- [x] `RiskGateway.evaluate_order`: single admission path; denial reasons are returned and breach rows are written when a database is supplied.
+- [x] Daily/weekly/monthly/drawdown and per-strategy/per-asset breaker buckets; `RESTRICTED` and `HALTED` block new entries.
+- [x] `trading/core.py`: PaperBroker placement routes through `RiskGateway.transmit`; only the gateway invokes low-level `submit`.
+- [x] Behavioral denial/routing tests added; gate evidence and two fresh environment runs remain required before close-out.

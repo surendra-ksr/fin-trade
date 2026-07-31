@@ -67,8 +67,12 @@ def test_sentiment_process_batch_persists():
 def test_pattern_detection_on_synthetic_candles():
     """Synthetic candles with known expected flags must be detected correctly."""
     from models.patterns import PatternEngine, detect_doji, detect_hammer, detect_engulfing
-    # Doji synthetic: open ≈ close
+    # Independent derivation of the tolerance: doji body/range < 0.005.
+    # With range=10, the exact worked-vector boundary is body=0.05;
+    # 0.049 is accepted and 0.05001 rejected, like the exact RSI Wilder vector.
     assert detect_doji(100.0, 105.0, 95.0, 100.01)
+    assert detect_doji(100.0, 105.0, 95.0, 100.049)
+    assert not detect_doji(100.0, 105.0, 95.0, 100.05001)
     # Hammer synthetic: long lower shadow
     assert detect_hammer(100.0, 102.0, 90.0, 101.0)
     # Bullish engulfing synthetic

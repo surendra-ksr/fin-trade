@@ -434,6 +434,20 @@ api_keys:
   alpaca_secret_key: "${ALPACA_SECRET}"
 
 # -----------------------------------------------------------------------------
+# Dashboard (Phase 11) — offline Streamlit control surface.
+# Read-mostly: the dashboard reads ONLY the local sqlite DB. The two mutation
+# paths (kill switch + approval queue) both require explicit human action and
+# are wired through the Phase-10 token-confirmation flow / Phase-9 lifecycle.
+# `refresh_interval_seconds` drives the auto-refresh cadence of every page.
+# -----------------------------------------------------------------------------
+dashboard:
+  enabled: true
+  title: "fin-trade dashboard"
+  refresh_interval_seconds: 30       # auto-refresh cadence for every page
+  boot_timeout_seconds: 30           # headless boot smoke deadline
+  max_log_rows: 200                  # row cap for the log/breach panels
+
+# -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
 logging:

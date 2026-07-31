@@ -44,7 +44,7 @@ the backtest returned finite metrics. No network was used.
 | Phase 8 trading | §5 Phase 8 | order types, fills, positions, fees, idempotency caps | `trading/order_types.py` (7 order types + validated state machine + trigger edges) and `trading/paper_broker.py` (real fills via the shared `price_fill` core, fees, FIFO positions, realized P&L incl. entry fees, 30s duplicate window + 10 orders/min caps) | ✅ | 54 behavioral tests (`test_phase8_order_types.py` 29, `test_phase8_paper_broker.py` 25) |
 | Phase 9 automation | §5 Phase 9 | market guards, approval queue, recovery, reconciliation | `automation/scheduler.py` (US market-hours, America/New_York, DST + holiday aware, injected clock), `automation/approval_queue.py` (semi_automated TTL queue, full_auto bypass, DB-persisted), `automation/recovery.py` (graduated ramp 25/50/75/100% + cooling-off, breaker-integrated, caps size through the real RiskGateway), `automation/digest.py`, `automation/reconcile.py` (halts on position mismatch) | ✅ | 44 behavioral tests (`test_phase9_automation.py`) |
 | Phase 10 brokers | §5 Phase 10 | ABC, retry/timeout, Alpaca gate, kill-switch wiring | `trading/broker_base.py` ABC + `with_retry` + `evaluate_live_gate`; paper + mocked-Alpaca adapters; kill-switch cancel-all/flatten/token-resume on both | ✅ | 44 behavioral tests (`test_phase10_broker.py`) |
-| Phase 11 dashboard | §5 Phase 11 | offline Streamlit pages | Package marker only; no app/pages | ❌ | `find dashboard` |
+| Phase 11 dashboard | §5 Phase 11 | offline Streamlit pages | `dashboard/data.py` PURE python providers (zero Streamlit import → tested in CORE), `dashboard/actions.py` token-confirmed kill switch + Phase-9 approve/reject, `dashboard/app.py` + `dashboard/pages/*.py` thin renderers (overview/positions/orders/breaker/limits/models/backtests/logs); offline (local sqlite only); read-mostly; auto-refresh config-driven; headless boot smoke (OPT_ONLY env) | ✅ | 34 CORE + 1 OPT_ONLY tests (`test_phase11_dashboard.py`, `test_phase11_dashboard_boot.py`) |
 | Phase 12 validation | §5 Phase 12 | integration/stress suites and coverage | directories contain only `__init__.py`; no scenarios or coverage gate | ❌ | `find tests/integration tests/stress` |
 | Phase 13 optimization | §5 Phase 13 | profiling, caching, indices, benchmark results | No benchmark/profile artifact | ❌ | source/docs inspection |
 
@@ -89,7 +89,7 @@ policy.
 4. Speed breakers: **Yes for Phase-1 daily/weekly/monthly/drawdown breaker core; No for the required per-strategy/per-asset enforcement gateway.**
 5. Kill switch: **Yes in `risk/circuit_breakers.py` for the tested Phase-1 manager; not wired through later broker adapters.**
 6. Broker abstraction: **Yes ✅ (Phase 10)** — ABC + retry/timeout + live gate + kill-switch through adapters; gateway sole submit path.
-7. Oversight/configurability: **Partial**; config/logging are implemented, dashboard and later operational surfaces are not.
+7. Oversight/configurability: **Yes ✅ (Phase 11)** — config/logging implemented; Phase-11 dashboard makes state visible (8 pages) and wires the two human-in-the-loop mutation paths: token-confirmed kill switch (Phase-10 flow, token-less rejected) and Phase-9 approve/reject on the approval queue.
 
 ## Required follow-up
 
@@ -282,4 +282,40 @@ value is **TOTAL=339**, proven in `docs/PHASE7_EVIDENCE.md` for both environment
 - No logic weakened; no breaker thresholds weakened; no network; no live broker; no real orders;
   all commits pushed; working tree clean before evidence reporting; PR open
   ("Phase 10: broker integration"); Phase 11 (dashboard) next.
+
+## Phase 11 audit entry (2026-07-31, fresh evidence pack)
+
+- Architecture rule honored: `dashboard/data.py` (398 lines / 21 docstring-triples) and
+  `dashboard/actions.py` (190 lines / 12 docstring-triples) are **PURE python** (zero
+  Streamlit import — proven by `test_dashboard_data_module_has_no_streamlit_import` and
+  `test_dashboard_actions_module_has_no_streamlit_import`), so they run in CORE exactly like
+  the rest of the safety core. `dashboard/_runtime.py` (62 lines) is streamlit-free too. Only
+  `dashboard/app.py` + `dashboard/pages/*.py` import Streamlit, and they are thin renderers
+  (not collected by pytest: `testpaths=tests`).
+- Read-only / offline: `test_dashboard_pure_modules_have_no_network_call_sites` proves no
+  network call sites in the pure modules; `grep -rnE` over `dashboard/` returns NO
+  requests/urllib/socket/urlopen. Every provider reads ONLY the local sqlite DB (empty DB is
+  a first-class case — empty/zero returns, never raises).
+- Mutation paths (the only two): (a) `engage_kill_switch` gated by the Phase-10 token flow
+  (`request_kill_token` → `breaker.confirm_override`); token-less / invalid / expired attempts
+  are **rejected with no action** (`test_kill_switch_rejected_without_token`,
+  `test_kill_switch_rejected_with_invalid_token`, `test_kill_switch_rejected_with_empty_string_token`).
+  (b) `approve_signal` / `reject_signal` route through the Phase-9 `ApprovalQueue` (persisted
+  to `system_state` + `automation_log`; survives restart — `test_approval_queue_survives_restart`).
+- Breaker-state panel renders `STATE_SEVERITY` + active `TradingPolicy` reconstructed
+  **read-only** from `breaker_state` persistence (never calls `evaluate()`):
+  `test_breaker_state_panel_halted_renders_severity_and_policy` (severity 4, entries blocked,
+  size 0), `test_breaker_state_panel_kill_switch_engaged` (severity 5, flatten_all).
+- **New OPT_ONLY category declared** (architecture rule): the headless boot smoke
+  (`test_phase11_dashboard_boot.py`) imports Streamlit inside the body, so it COLLECTS in CORE
+  (counted toward TOTAL) but fails `ModuleNotFoundError: streamlit`, and passes in the optional
+  env. Per-env collect-only: CORE=516, OPT=516 (identical). Boot smoke launches
+  `streamlit run dashboard/app.py --server.headless=true --server.port=0` pointed at a seeded
+  tmp DB and confirms boot within the 30s deadline (output pasted in `docs/PHASE11_EVIDENCE.md`).
+- Reconciliation: `TOTAL = CORE_GREEN(503) + ML_ONLY(12) + OPT_ONLY(1) = 516`
+  (= baseline 481 + 34 CORE + 1 OPT_ONLY). `.venv` collect=516; `.venv-opt` collect=516;
+  `.venv` run=503 passed / 12 ML-only + 1 OPT_ONLY import errors; `.venv-opt` run=504 passed
+  (adds the boot smoke) / 12 ML-only; 2× green each in CORE (28.18s / 26.07s, distinct).
+- No logic weakened; no breaker thresholds weakened; no network; no live broker; no real
+  orders; all commits pushed; PR "Phase 11: dashboard"; Phase 12 (integration + stress) next.
 

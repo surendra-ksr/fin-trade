@@ -542,6 +542,25 @@ class PathsConfig:
     log_dir: str = "logs"
 
 
+@dataclass
+class DashboardConfig:
+    """Phase-11 offline dashboard (Streamlit, optional tier).
+
+    The dashboard is **read-mostly**: it reads only the local SQLite DB.
+    The two mutation paths (kill switch + approval queue) require explicit
+    human action and route through the Phase-10 token-confirmation flow and
+    the Phase-9 approval lifecycle respectively. ``refresh_interval_seconds``
+    drives the auto-refresh cadence of every page; ``boot_timeout_seconds``
+    is the deadline the headless boot smoke must come up within.
+    """
+
+    enabled: bool = True
+    title: str = "fin-trade dashboard"
+    refresh_interval_seconds: int = 30
+    boot_timeout_seconds: int = 30
+    max_log_rows: int = 200
+
+
 # =============================================================================
 # Root config
 # =============================================================================
@@ -570,6 +589,7 @@ class AppConfig:
     api_keys: ApiKeysConfig = field(default_factory=ApiKeysConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
     # populated by the loader (not part of the yaml file)
     config_path: str = ""
@@ -882,6 +902,14 @@ class AppConfig:
         check(bool(_TIME_PATTERN.match(self.logging.rotation_time)),
               "logging.rotation_time must be HH:MM")
 
+        # --- dashboard (Phase 11) ---
+        dash = self.dashboard
+        check(dash.refresh_interval_seconds >= 5,
+              "dashboard.refresh_interval_seconds must be >= 5")
+        check(dash.boot_timeout_seconds >= 10,
+              "dashboard.boot_timeout_seconds must be >= 10")
+        check(dash.max_log_rows >= 1, "dashboard.max_log_rows must be >= 1")
+
         return p
 
 
@@ -1010,6 +1038,7 @@ def _build_root(raw: dict[str, Any], warnings: list[str]) -> AppConfig:
     cfg.api_keys = _section(ApiKeysConfig, raw.get("api_keys"), warnings, "api_keys")
     cfg.logging = _section(LoggingConfig, raw.get("logging"), warnings, "logging")
     cfg.paths = _section(PathsConfig, raw.get("paths"), warnings, "paths")
+    cfg.dashboard = _section(DashboardConfig, raw.get("dashboard"), warnings, "dashboard")
     cfg.warnings = warnings
     return cfg
 

@@ -26,6 +26,12 @@ def test_ema_hand_calculation():
     for value in range(11,15): expected=(value-expected)*(2/6)+expected
     assert x.ema_5.iloc[-1]==pytest.approx(expected)
 
+def test_rsi_wilder_numeric_worked_vector():
+    # Direct Wilder recurrence: seed gain=1.0/loss=.2 at t=4, then
+    # gain=1.0 and loss=.16 at t=5, hence RSI=100-100/(1+6.25).
+    from features.indicators import rsi
+    assert rsi(pd.Series([100,102,103,105,104,105],dtype=float),5).iloc[-1] == pytest.approx(86.2068965517)
+
 def test_macd_components_are_consistent():
     x=compute_indicators(frame(60)); assert x.macd.iloc[-1]-x.macd_signal.iloc[-1]==pytest.approx((x.macd-x.macd_signal).iloc[-1])
 

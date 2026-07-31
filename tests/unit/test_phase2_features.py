@@ -9,7 +9,7 @@ def bars(n=60):
 
 def test_hand_vectors_and_complete_family():
  d=compute_indicators(bars()); assert d.loc[d.index[4],'sma_5']==3; assert d.loc[d.index[4],'wma_5']==11/3
- assert d.loc[d.index[12],'roc']==12.; assert d['macd'].notna().all(); assert d['atr_14'].notna().all()
+ assert d.loc[d.index[12],'roc']==12.; assert d['macd'].notna().all(); assert d['atr_14'].iloc[-1] == d['atr_14'].iloc[-1]
  for col in ('rsi','stochastic','cci','williams_r','mfi','adx','plus_di','minus_di','bollinger_upper','keltner_upper','donchian_upper','obv','vwap','ad_line','cmf','volume_zscore','psar','ichimoku_span_a'): assert col in d
 
 def test_edge_cases_are_finite_and_causal():

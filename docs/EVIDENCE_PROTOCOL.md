@@ -7,6 +7,9 @@
 - Any change to a previously reported number is labeled `CORRECTION:` with before and
   after values. Silent edits are fabrication.
 - Continuation/session artifacts belong under `docs/` (never the repository root).
+- **Clock-review rule:** tests must not assert against absolute values of
+  `time.monotonic()`, process uptime, or wall-clock time. Patch the clock before
+  the action under test and advance a mutable fake relative to that action.
 
 ## Atomic Evidence Pack
 

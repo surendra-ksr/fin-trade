@@ -1,0 +1,22 @@
+## Phase 16: Environment & Clock Hardening
+
+### Summary
+Fixed two staged-run defects with verified root causes without weakening any tests:
+1. **Environment Isolation (Defect A)**: 
+   - `load_config` now treats an empty `FIN_TRADE_CONFIG` env var as missing (falling back to default).
+   - Added `_scrub_test_environment()` to `conftest.py` that pops all `FIN_TRADE_`, `APCA_`, and `ALPACA_` prefixed variables before application modules are imported.
+   - Wrapped `.env` loading in `utils/config.py` in an `if not os.getenv("FIN_TRADE_TEST"):` check to skip `.env` loading during testing.
+   - Added a `dotenv-isolation` CI job in `.github/workflows/ci.yml` that writes a sample `.env` file and runs a subset of tests to verify test suite robustness against local dotenv files.
+
+2. **Clock Dependency (Defect B)**: 
+   - `test_override_token_expires` (in `tests/unit/test_circuit_breakers.py`) faked `time.monotonic` as an absolute constant, which failed when the host runner uptime exceeded the test assumption. The implementation was correct; the fix was to patch `time.monotonic` with a mutable relative fake before invoking the action under test.
+   - Added a new permanent protocol rule to `docs/EVIDENCE_PROTOCOL.md` (Clock-review rule): no test may assert against absolute values of `time.monotonic()`, process uptime, or wall-clock time.
+
+### Validation
+Verified the full suite (569 tests) in a 4-quadrant matrix:
+- TZ=UTC, no dotenv
+- TZ=UTC, sample dotenv
+- TZ=Asia/Kolkata, sample dotenv
+- TZ=Asia/Kolkata, no dotenv
+
+For details on the matrix runs and focused regression results, please see `docs/PHASE16_EVIDENCE.md`.

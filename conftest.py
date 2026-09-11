@@ -12,6 +12,21 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+
+def _scrub_test_environment() -> None:
+    """Remove host trading settings before application modules are imported."""
+    prefixes = ("FIN_TRADE_", "APCA_", "ALPACA_")
+    for key in tuple(os.environ):
+        if key.startswith(prefixes):
+            os.environ.pop(key, None)
+    # ``utils.config`` uses this sentinel to avoid reading a developer's .env.
+    os.environ["FIN_TRADE_TEST"] = "1"
+
+
+# This must run at conftest import time, rather than only in a fixture: test
+# modules and their imports are collected after this file is imported.
+_scrub_test_environment()
+
 from data.database import DatabaseManager  # noqa: E402
 from utils.config import AppConfig, load_config  # noqa: E402
 
@@ -64,7 +79,9 @@ def _quiet_console_logging() -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure tests never observe a developer's real credentials/mode."""
-    for var in ("FIN_TRADE_MODE_OVERRIDE", "FIN_TRADE_LIVE_AUTHORIZATION"):
-        monkeypatch.delenv(var, raising=False)
-    os.environ.setdefault("FIN_TRADE_TEST", "1")
+    """Ensure every test starts without host trading settings or dotenv input."""
+    prefixes = ("FIN_TRADE_", "APCA_", "ALPACA_")
+    for key in tuple(os.environ):
+        if key.startswith(prefixes):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("FIN_TRADE_TEST", "1")

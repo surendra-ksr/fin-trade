@@ -572,11 +572,13 @@ class TestManualControls:
         assert mgr.state is CircuitBreakerState.RESTRICTED
 
     def test_override_token_expires(self, app_config: AppConfig, monkeypatch) -> None:
+        import risk.circuit_breakers as cb_mod
+
+        fake_now = {"t": 1_000.0}
+        monkeypatch.setattr(cb_mod.time, "monotonic", lambda: fake_now["t"])
         mgr, _ = make_manager(app_config, deepen=True)
         token = mgr.request_override("resume", reason="x")
-        import risk.circuit_breakers as cb_mod
-        fake_now = {"t": 1000.0}
-        monkeypatch.setattr(cb_mod.time, "monotonic", lambda: fake_now["t"] + 10_000)
+        fake_now["t"] += cb_mod._OVERRIDE_TOKEN_TTL_SECONDS + 1
         assert not mgr.confirm_override(token)
 
     def test_unknown_override_token_rejected(self, app_config: AppConfig) -> None:

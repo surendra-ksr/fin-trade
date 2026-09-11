@@ -1120,14 +1120,17 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         ConfigError: file missing/unparseable, or not a mapping.
         ConfigValidationError: semantic validation failures (lists all problems).
     """
-    config_path = Path(path or os.environ.get("FIN_TRADE_CONFIG", DEFAULT_CONFIG_PATH)).expanduser()
+    config_path = Path(path or os.getenv("FIN_TRADE_CONFIG") or DEFAULT_CONFIG_PATH).expanduser()
     if not config_path.exists():
         raise ConfigError(f"Configuration file not found: {config_path.resolve()}")
 
-    # Load .env next to the config first, then CWD; real env always wins.
-    load_dotenv(config_path.parent / ".env", override=False)
-    if config_path.parent.resolve() != Path.cwd().resolve():
-        load_dotenv(Path.cwd() / ".env", override=False)
+    # Tests set this sentinel before application imports so a developer's .env
+    # cannot influence collection or configuration. Production continues to
+    # load config-local dotenv values first, then the working-directory file.
+    if not os.getenv("FIN_TRADE_TEST"):
+        load_dotenv(config_path.parent / ".env", override=False)
+        if config_path.parent.resolve() != Path.cwd().resolve():
+            load_dotenv(Path.cwd() / ".env", override=False)
 
     try:
         raw_text = config_path.read_text(encoding="utf-8")
@@ -1168,7 +1171,7 @@ def get_config(path: str | os.PathLike[str] | None = None, reload: bool = False)
     Returns:
         The cached :class:`AppConfig`.
     """
-    resolved = str(Path(path or os.environ.get("FIN_TRADE_CONFIG", DEFAULT_CONFIG_PATH))
+    resolved = str(Path(path or os.getenv("FIN_TRADE_CONFIG") or DEFAULT_CONFIG_PATH)
                      .expanduser().resolve())
     if reload or resolved not in _CONFIG_CACHE:
         _CONFIG_CACHE[resolved] = load_config(resolved)
